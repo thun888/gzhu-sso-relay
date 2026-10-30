@@ -137,7 +137,10 @@ export default function Login({ siteTitle, panel }: Props) {
                   </Button>
                 </div>
 
-                <p className="mt-2 min-h-[18px] text-[12.5px] text-destructive" role="alert">
+                <p
+                  className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
+                  role="alert"
+                >
                   {error}
                 </p>
 
