@@ -9,11 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
+	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
 
 const (
-	sessionCookie = "relay_session"
+	sessionCookie = session.CookieName
 	ctxUserKey    = "relay.user"
 )
 
@@ -52,7 +53,7 @@ func (h *Auth) Login(c *gin.Context) {
 		return
 	}
 
-	h.setCookie(c, result.Token, int(h.service.SessionTTL()/time.Second))
+	setSessionCookie(c, result.Token, int(h.service.SessionTTL()/time.Second), h.secure)
 	c.JSON(http.StatusOK, toUserView(result.User))
 }
 
@@ -67,7 +68,7 @@ func (h *Auth) Logout(c *gin.Context) {
 			return
 		}
 	}
-	h.setCookie(c, "", -1)
+	setSessionCookie(c, "", -1, h.secure)
 	c.Status(http.StatusNoContent)
 }
 
@@ -96,10 +97,6 @@ func (h *Auth) RequireUser() gin.HandlerFunc {
 		c.Set(ctxUserKey, user)
 		c.Next()
 	}
-}
-
-func (h *Auth) setCookie(c *gin.Context, value string, maxAge int) {
-	c.SetCookie(sessionCookie, value, maxAge, "/", "", h.secure, true)
 }
 
 func toUserView(u *model.User) userView {

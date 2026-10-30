@@ -12,6 +12,8 @@ import (
 )
 
 const (
+	// CookieName 是浏览器携带会话令牌的 cookie 名，授权端点与 API 共用。
+	CookieName = "relay_session"
 	keyPrefix  = "relay:session:"
 	DefaultTTL = 12 * time.Hour
 )

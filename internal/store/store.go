@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
@@ -44,6 +45,19 @@ func Migrate(db *gorm.DB) error {
 	)
 	if err != nil {
 		return fmt.Errorf("store: 迁移表结构: %w", err)
+	}
+	return nil
+}
+
+func Seed(db *gorm.DB) error {
+	defaults := []model.Scope{
+		{Name: "openid", DisplayName: "身份标识", Description: "返回用户唯一标识 sub", IsDefault: true},
+		{Name: "profile", DisplayName: "基本资料", Description: "返回姓名、学号与班级", IsDefault: true},
+		{Name: "email", DisplayName: "校内邮箱", Description: "返回自动生成的校内邮箱", IsDefault: true},
+	}
+	err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error
+	if err != nil {
+		return fmt.Errorf("store: 写入默认 scope: %w", err)
 	}
 	return nil
 }

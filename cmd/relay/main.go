@@ -20,6 +20,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
+	"github.com/thun888/gzhu-sso-relay/internal/oidc"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
@@ -52,14 +53,27 @@ func run() error {
 	if err := store.Migrate(db); err != nil {
 		return err
 	}
+	if err := store.Seed(db); err != nil {
+		return err
+	}
 
 	rdb := cache.Open(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	defer rdb.Close()
 
+	keys, err := oidc.LoadOrCreateKeys(cfg.SigningKeyPath)
+	if err != nil {
+		return err
+	}
+
+	users := repo.NewUserRepo(db)
+	accounts := repo.NewAccountRepo(db)
+	clients := repo.NewClientRepo(db)
+	sessions := session.New(rdb)
+
 	authService := auth.NewService(auth.Options{
-		Users:    repo.NewUserRepo(db),
-		Accounts: repo.NewAccountRepo(db),
-		Sessions: session.New(rdb),
+		Users:    users,
+		Accounts: accounts,
+		Sessions: sessions,
 		Throttle: auth.NewThrottle(rdb),
 		Upstream: auth.Upstream{
 			CASBaseURL:    cfg.CAS.BaseURL,
@@ -68,14 +82,37 @@ func run() error {
 		},
 		EmailDomain: cfg.EmailDomain,
 	})
-	authHandler := httpapi.NewAuth(authService, strings.HasPrefix(cfg.BaseURL, "https://"))
+	secure := strings.HasPrefix(cfg.BaseURL, "https://")
+	authHandler := httpapi.NewAuth(authService, secure)
+	loginPage, err := httpapi.NewLoginPage(authService, secure)
+	if err != nil {
+		return err
+	}
+
+	provider := oidc.New(oidc.Options{
+		Issuer:   cfg.BaseURL,
+		LoginURL: cfg.LoginURL,
+		Keys:     keys,
+		Clients:  clients,
+		Accounts: accounts,
+		Users:    users,
+		Sessions: sessions,
+		Codes:    oidc.NewCodeStore(rdb),
+	})
 
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.GET("/healthz", healthz(db, rdb))
+	router.GET("/.well-known/openid-configuration", provider.Discovery)
+	router.GET("/oidc/jwks", provider.JWKS)
+	router.GET("/oidc/authorize", provider.Authorize)
+	router.POST("/oidc/token", provider.Token)
+	router.GET("/oidc/userinfo", provider.UserInfo)
 	router.POST("/api/login", authHandler.Login)
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), authHandler.Me)
+	router.GET("/login", loginPage.Show)
+	router.POST("/login", loginPage.Submit)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

@@ -9,14 +9,16 @@ import (
 )
 
 type Config struct {
-	HTTPAddr    string
-	BaseURL     string
-	EmailDomain string
-	Database    Database
-	Redis       Redis
-	Secret      string
-	CAS         Endpoint
-	Portal      Endpoint
+	HTTPAddr       string
+	BaseURL        string
+	EmailDomain    string
+	LoginURL       string
+	SigningKeyPath string
+	Database       Database
+	Redis          Redis
+	Secret         string
+	CAS            Endpoint
+	Portal         Endpoint
 }
 
 type Database struct {
@@ -35,10 +37,12 @@ type Endpoint struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPAddr:    env("RELAY_HTTP_ADDR", ":8080"),
-		BaseURL:     strings.TrimSuffix(env("RELAY_BASE_URL", "http://localhost:8080"), "/"),
-		EmailDomain: env("RELAY_EMAIL_DOMAIN", "gzhu.edu.cn"),
-		Database:    Database{DSN: env("RELAY_DB_DSN", "")},
+		HTTPAddr:       env("RELAY_HTTP_ADDR", ":8080"),
+		BaseURL:        strings.TrimSuffix(env("RELAY_BASE_URL", "http://localhost:8080"), "/"),
+		EmailDomain:    env("RELAY_EMAIL_DOMAIN", "gzhu.edu.cn"),
+		LoginURL:       env("RELAY_LOGIN_URL", "/login"),
+		SigningKeyPath: env("RELAY_SIGNING_KEY_PATH", "./data/signing_key.pem"),
+		Database:       Database{DSN: env("RELAY_DB_DSN", "")},
 		Redis: Redis{
 			Addr:     env("RELAY_REDIS_ADDR", "localhost:6379"),
 			Password: env("RELAY_REDIS_PASSWORD", ""),

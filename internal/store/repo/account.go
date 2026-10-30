@@ -60,3 +60,14 @@ func (r *AccountRepo) SaveProfile(ctx context.Context, userID, provider, provide
 	}
 	return nil
 }
+
+func (r *AccountRepo) ProfileData(ctx context.Context, userID, provider string) ([]byte, error) {
+	var raw []byte
+	err := r.db.WithContext(ctx).Model(&model.OAuthAccount{}).
+		Where("user_id = ? AND provider = ?", userID, provider).
+		Pluck("profile_data", &raw).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 读取 %s/%s 的 profile_data: %w", userID, provider, err)
+	}
+	return raw, nil
+}
