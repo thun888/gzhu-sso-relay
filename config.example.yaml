@@ -7,6 +7,8 @@ server:
   base_url: "http://localhost:8080"
   # 未登录访问 /oidc/authorize 时跳转到的登录页
   login_url: "/login"
+  # 登录卡片顶部的品牌行，留空则整行隐藏
+  site_title: "广州大学"
   # 按 sub 前缀匹配邮箱后缀，最长前缀优先；邮箱生成为 <sub>@<后缀>。
   # 键为空字符串时匹配所有 sub，可作兜底；删掉后未命中前缀的账号将无法创建
   email_domains:

@@ -22,6 +22,7 @@ type Server struct {
 	Addr           string       `yaml:"addr"`
 	BaseURL        string       `yaml:"base_url"`
 	LoginURL       string       `yaml:"login_url"`
+	SiteTitle      string       `yaml:"site_title"`
 	EmailDomains   EmailDomains `yaml:"email_domains"`
 	SigningKeyPath string       `yaml:"signing_key_path"`
 	LoginPanel     LoginPanel   `yaml:"login_panel"`
@@ -94,6 +95,7 @@ func defaults() *Config {
 			Addr:           ":8080",
 			BaseURL:        "http://localhost:8080",
 			LoginURL:       "/login",
+			SiteTitle:      "广州大学",
 			SigningKeyPath: "./data/signing_key.pem",
 			LoginPanel: LoginPanel{
 				Enabled: true,

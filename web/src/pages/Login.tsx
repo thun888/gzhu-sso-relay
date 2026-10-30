@@ -28,14 +28,17 @@ export default function Login() {
   const [revealed, setRevealed] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState("")
+  const [siteTitle, setSiteTitle] = useState("")
   const [panel, setPanel] = useState<LoginPanel>(emptyPanel)
 
   useEffect(() => {
     let alive = true
     fetch("/api/public/config")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { login_panel?: LoginPanel } | null) => {
-        if (alive && data?.login_panel) setPanel(data.login_panel)
+      .then((data: { site_title?: string; login_panel?: LoginPanel } | null) => {
+        if (!alive || !data) return
+        setSiteTitle(data.site_title ?? "")
+        if (data.login_panel) setPanel(data.login_panel)
       })
       .catch(() => undefined)
     return () => {
@@ -87,14 +90,21 @@ export default function Login() {
         >
           <div className={cn(showPanel && "md:grid md:grid-cols-[minmax(0,1fr)_296px]")}>
             <div className="px-7 py-9 sm:px-10">
-              <div className="flex items-center gap-2">
-                <span className="size-1.5 rounded-full bg-primary" />
-                <span className="text-[12px] tracking-[0.12em] text-muted-foreground">
-                  广州大学
-                </span>
-              </div>
+              {siteTitle && (
+                <div className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-primary" />
+                  <span className="text-[12px] tracking-[0.12em] text-muted-foreground">
+                    {siteTitle}
+                  </span>
+                </div>
+              )}
 
-              <h1 className="mt-6 text-[21px] font-medium tracking-tight text-foreground">
+              <h1
+                className={cn(
+                  "text-[21px] font-medium tracking-tight text-foreground",
+                  siteTitle && "mt-6",
+                )}
+              >
                 统一身份认证
               </h1>
               <p className="mt-1.5 text-[13px] text-muted-foreground">
