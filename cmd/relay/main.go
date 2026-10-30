@@ -19,6 +19,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
 	"github.com/thun888/gzhu-sso-relay/internal/binding"
 	"github.com/thun888/gzhu-sso-relay/internal/cache"
+	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
@@ -90,7 +91,14 @@ func run() error {
 		EmailDomains: cfg.Server.EmailDomains,
 	})
 	secure := strings.HasPrefix(cfg.Server.BaseURL, "https://")
-	authHandler := httpapi.NewAuth(authService, secure)
+
+	var geetest *captcha.Geetest
+	if cfg.Captcha.Enabled {
+		geetest = captcha.NewGeetest(cfg.Captcha.CaptchaID, cfg.Captcha.CaptchaKey)
+	}
+	captchaPolicy := httpapi.NewCaptchaPolicy(geetest, auth.NewCaptchaGuard(rdb, cfg.Captcha.FailWindow.Std()))
+
+	authHandler := httpapi.NewAuth(authService, captchaPolicy, secure)
 
 	registry, err := binding.NewRegistry(cfg.Bindings.Providers, nil)
 	if err != nil {
@@ -119,6 +127,9 @@ func run() error {
 	})
 
 	router := gin.New()
+	if err := router.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		return err
+	}
 	router.Use(gin.Logger(), gin.Recovery())
 	router.GET("/healthz", healthz(db, rdb))
 	router.GET("/.well-known/openid-configuration", provider.Discovery)
@@ -126,7 +137,7 @@ func run() error {
 	router.GET("/oidc/authorize", provider.Authorize)
 	router.POST("/oidc/token", provider.Token)
 	router.GET("/oidc/userinfo", provider.UserInfo)
-	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server.SiteTitle, cfg.Server.LoginPanel))
+	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server.SiteTitle, cfg.Server.LoginPanel, captchaPolicy))
 	router.POST("/api/login", authHandler.Login)
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)

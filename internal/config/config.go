@@ -18,7 +18,16 @@ type Config struct {
 	Database  Database `yaml:"database"`
 	Redis     Redis    `yaml:"redis"`
 	Upstream  Upstream `yaml:"upstream"`
+	Captcha   Captcha  `yaml:"captcha"`
 	Bindings  Bindings `yaml:"bindings"`
+}
+
+// Captcha 极验行为验证。开启后某个 IP 登录失败一次，fail_window 内该 IP 登录都需先过验证码。
+type Captcha struct {
+	Enabled    bool     `yaml:"enabled"`
+	CaptchaID  string   `yaml:"captcha_id"`
+	CaptchaKey string   `yaml:"captcha_key"`
+	FailWindow Duration `yaml:"fail_window"`
 }
 
 // Bindings 声明可绑定的第三方账号来源，每个来源走标准 OAuth2 授权码流程。
@@ -35,6 +44,7 @@ type Server struct {
 	SiteTitle      string       `yaml:"site_title"`
 	EmailDomains   EmailDomains `yaml:"email_domains"`
 	SigningKeyPath string       `yaml:"signing_key_path"`
+	TrustedProxies []string     `yaml:"trusted_proxies"`
 	LoginPanel     LoginPanel   `yaml:"login_panel"`
 }
 
@@ -109,6 +119,7 @@ func defaults() *Config {
 			AccountURL:     "/",
 			SiteTitle:      "广州大学",
 			SigningKeyPath: "./data/signing_key.pem",
+			TrustedProxies: []string{"127.0.0.1", "::1"},
 			LoginPanel: LoginPanel{
 				Enabled: true,
 				Title:   "统一身份认证门户",
@@ -116,6 +127,9 @@ func defaults() *Config {
 			},
 		},
 		Redis: Redis{Addr: "localhost:6379"},
+		Captcha: Captcha{
+			FailWindow: Duration(24 * time.Hour),
+		},
 		Upstream: Upstream{
 			CASBaseURL:    "https://newcas.gzhu.edu.cn",
 			PortalBaseURL: "https://newmy.gzhu.edu.cn",
@@ -145,6 +159,14 @@ func (c *Config) validate() error {
 	if len(c.Server.EmailDomains) == 0 {
 		missing = append(missing, "server.email_domains")
 	}
+	if c.Captcha.Enabled {
+		if c.Captcha.CaptchaID == "" {
+			missing = append(missing, "captcha.captcha_id")
+		}
+		if c.Captcha.CaptchaKey == "" {
+			missing = append(missing, "captcha.captcha_key")
+		}
+	}
 	if len(missing) > 0 {
 		return errors.New("缺少必需项: " + strings.Join(missing, ", "))
 	}
@@ -157,6 +179,9 @@ func (c *Config) validate() error {
 
 	if c.Upstream.Timeout <= 0 {
 		return errors.New("upstream.timeout 必须为正数")
+	}
+	if c.Captcha.FailWindow <= 0 {
+		return errors.New("captcha.fail_window 必须为正数")
 	}
 	return nil
 }

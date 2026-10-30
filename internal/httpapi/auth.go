@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
+	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
@@ -21,11 +22,12 @@ const (
 
 type Auth struct {
 	service *auth.Service
+	captcha *CaptchaPolicy
 	secure  bool
 }
 
-func NewAuth(service *auth.Service, secure bool) *Auth {
-	return &Auth{service: service, secure: secure}
+func NewAuth(service *auth.Service, policy *CaptchaPolicy, secure bool) *Auth {
+	return &Auth{service: service, captcha: policy, secure: secure}
 }
 
 type userView struct {
@@ -36,8 +38,9 @@ type userView struct {
 }
 
 type loginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username string         `json:"username" binding:"required"`
+	Password string         `json:"password" binding:"required"`
+	Captcha  captcha.Answer `json:"captcha"`
 }
 
 func (h *Auth) Login(c *gin.Context) {
@@ -47,14 +50,32 @@ func (h *Auth) Login(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.Login(c.Request.Context(), req.Username, req.Password)
+	ctx := c.Request.Context()
+	ip := c.ClientIP()
+	guard := h.captcha.Required(ctx, ip)
+
+	if guard {
+		if err := h.captcha.Verify(ctx, req.Captcha); err != nil {
+			log.Printf("验证码校验未通过 ip=%s: %v", ip, err)
+			status, message := captchaError(err)
+			c.JSON(status, gin.H{"error": message, "captcha_required": true})
+			return
+		}
+	}
+
+	result, err := h.service.Login(ctx, req.Username, req.Password)
 	if err != nil {
-		log.Printf("登录失败 id=%s ip=%s: %v", req.Username, c.ClientIP(), err)
+		log.Printf("登录失败 id=%s ip=%s: %v", req.Username, ip, err)
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			h.captcha.Flag(ctx, ip)
+			guard = h.captcha.Enabled()
+		}
 		status, message := authError(err)
-		c.JSON(status, gin.H{"error": message})
+		c.JSON(status, gin.H{"error": message, "captcha_required": guard})
 		return
 	}
 
+	h.captcha.Clear(ctx, ip)
 	setSessionCookie(c, result.Token, int(h.service.SessionTTL()/time.Second), h.secure)
 	c.JSON(http.StatusOK, toUserView(result.User))
 }
@@ -139,6 +160,13 @@ func authError(err error) (int, string) {
 	default:
 		return http.StatusInternalServerError, "登录失败"
 	}
+}
+
+func captchaError(err error) (int, string) {
+	if errors.Is(err, captcha.ErrUnavailable) {
+		return http.StatusBadGateway, "验证服务不可用，请稍后再试"
+	}
+	return http.StatusBadRequest, "请先完成验证"
 }
 
 func setSessionCookie(c *gin.Context, value string, maxAge int, secure bool) {

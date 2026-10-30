@@ -1,32 +1,78 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Eye, EyeOff, Lock, User } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { safeNext, type LoginPanel } from "@/lib/config"
+import { safeNext, type CaptchaConfig, type LoginPanel } from "@/lib/config"
+import { createCaptcha, type CaptchaAnswer, type CaptchaInstance } from "@/lib/geetest"
 import { cn } from "@/lib/utils"
 
 type Props = {
   siteTitle: string
   panel: LoginPanel
+  captcha: CaptchaConfig
+}
+
+type loginResponse = {
+  error?: string
+  captcha_required?: boolean
 }
 
 function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
 
-export default function Login({ siteTitle, panel }: Props) {
+export default function Login({ siteTitle, panel, captcha }: Props) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [revealed, setRevealed] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState("")
+  const [gated, setGated] = useState(false)
+  const [ready, setReady] = useState(false)
 
+  const widget = useRef<CaptchaInstance | null>(null)
+  const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
+
+  const needCaptcha = captcha.enabled && (captcha.required || gated)
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  useEffect(() => {
+    submitRef.current = (answer) => {
+      void submit(answer)
+    }
+  })
+
+  useEffect(() => {
+    if (!needCaptcha || !captcha.captchaId) return
+
+    let alive = true
+    createCaptcha(
+      captcha.captchaId,
+      (answer) => submitRef.current(answer),
+      () => setError("验证加载异常，请刷新页面后重试"),
+    )
+      .then((instance) => {
+        if (!alive) {
+          instance.destroy()
+          return
+        }
+        instance.onReady(() => setReady(true))
+        widget.current = instance
+      })
+      .catch(() => {
+        if (alive) setError("验证组件加载失败，请刷新页面后重试")
+      })
+
+    return () => {
+      alive = false
+      widget.current?.destroy()
+      widget.current = null
+    }
+  }, [needCaptcha, captcha.captchaId])
+
+  async function submit(answer?: CaptchaAnswer) {
     if (pending) return
 
     setError("")
@@ -35,12 +81,14 @@ export default function Login({ siteTitle, panel }: Props) {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: username.trim(), password, captcha: answer }),
       })
 
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null
+        const data = (await res.json().catch(() => null)) as loginResponse | null
         setError(data?.error ?? "登录失败，请稍后重试")
+        if (data?.captcha_required) setGated(true)
+        if (answer) widget.current?.reset()
         return
       }
 
@@ -50,6 +98,23 @@ export default function Login({ siteTitle, panel }: Props) {
     } finally {
       setPending(false)
     }
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (pending) return
+
+    if (needCaptcha) {
+      if (!ready || !widget.current) {
+        setError("验证正在加载，请稍后重试")
+        return
+      }
+      setError("")
+      widget.current.showCaptcha()
+      return
+    }
+
+    void submit()
   }
 
   return (
@@ -136,6 +201,12 @@ export default function Login({ siteTitle, panel }: Props) {
                     )}
                   </Button>
                 </div>
+
+                {needCaptcha && (
+                  <p className="mt-2.5 text-[12.5px] leading-[18px] text-muted-foreground">
+                    该网络近期有登录失败记录，登录前需完成验证
+                  </p>
+                )}
 
                 <p
                   className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"

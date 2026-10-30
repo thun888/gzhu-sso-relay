@@ -20,6 +20,11 @@ server:
     "": "gzhu.edu.cn"
   # 首次启动自动生成 RS256 签名密钥，需持久化并纳入备份
   signing_key_path: "./data/signing_key.pem"
+  # 只有来自这些地址的请求才采信 X-Forwarded-For，用于还原真实来访 IP。
+  # 反向代理不在本机时把代理地址加进来；写成 [] 表示一律使用连接地址
+  trusted_proxies:
+    - "127.0.0.1"
+    - "::1"
   # 登录页右侧的预留文案区，enabled 为 false 时登录卡片收成单栏
   login_panel:
     enabled: true
@@ -41,6 +46,15 @@ upstream:
   cas_base_url: "https://newcas.gzhu.edu.cn"
   portal_base_url: "https://newmy.gzhu.edu.cn"
   timeout: 30s
+
+# 极验行为验证。开启后某个 IP 登录失败一次，fail_window 内该 IP 的登录都要先过验证码；
+# 期间任意一次登录成功即解除，直到下次失败重新要求验证
+captcha:
+  enabled: false
+  # 极验后台的验证 ID 与私钥，私钥只在服务端使用
+  captcha_id: ""
+  captcha_key: ""
+  fail_window: 24h
 
 # 可绑定的第三方账号来源。每个来源走标准 OAuth2 授权码流程，
 # 只要对方支持 authorization code 就能在这里加一条，不需要改代码。
