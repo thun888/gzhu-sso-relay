@@ -3,3 +3,4 @@ bin/
 config.yaml
 data/
 web/node_modules/
+web/dist/

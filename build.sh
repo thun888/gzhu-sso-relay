@@ -6,25 +6,24 @@ cd "$root"
 
 out=bin
 target=""
-build_web=1
 clean=0
 
 usage() {
 	cat <<'EOF'
 用法: ./build.sh [选项]
 
+编译 relay、relayctl、casprobe 三个命令。前端产物不在此处生成。
+
 选项:
   -o, --out DIR          输出目录，默认 bin
   -t, --target GOOS/GOARCH
                          交叉编译目标，默认本机，如 linux/amd64
-      --no-web           跳过前端构建，直接使用现有 web/dist
       --clean            构建前清空输出目录
   -h, --help             显示帮助
 
 示例:
   ./build.sh
   ./build.sh -t linux/amd64 -o dist
-  ./build.sh --no-web
 EOF
 }
 
@@ -32,7 +31,6 @@ while [ $# -gt 0 ]; do
 	case $1 in
 	-o | --out) out=$2; shift 2 ;;
 	-t | --target) target=$2; shift 2 ;;
-	--no-web) build_web=0; shift ;;
 	--clean) clean=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*)
@@ -48,26 +46,15 @@ command -v go >/dev/null || {
 	exit 1
 }
 
+if [ ! -f web/dist/index.html ]; then
+	echo "缺少 web/dist/index.html，先执行 npm --prefix web run build" >&2
+	exit 1
+fi
+
 if [ "$clean" = 1 ]; then
 	rm -rf "$out"
 fi
 mkdir -p "$out"
-
-if [ "$build_web" = 1 ]; then
-	command -v npm >/dev/null || {
-		echo "未找到 npm 命令，可用 --no-web 复用已有 web/dist" >&2
-		exit 1
-	}
-	if [ ! -d web/node_modules ]; then
-		npm --prefix web ci
-	fi
-	npm --prefix web run build
-fi
-
-if [ ! -f web/dist/index.html ]; then
-	echo "web/dist 缺少 index.html，go:embed 无法打包前端" >&2
-	exit 1
-fi
 
 goos=$(go env GOOS)
 goarch=$(go env GOARCH)
