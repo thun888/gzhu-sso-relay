@@ -68,6 +68,7 @@ func run() error {
 	users := repo.NewUserRepo(db)
 	accounts := repo.NewAccountRepo(db)
 	clients := repo.NewClientRepo(db)
+	groups := repo.NewGroupRepo(db)
 	sessions := session.New(rdb)
 
 	authService := auth.NewService(auth.Options{
@@ -113,6 +114,17 @@ func run() error {
 	router.GET("/api/me", authHandler.RequireUser(), authHandler.Me)
 	router.GET("/login", loginPage.Show)
 	router.POST("/login", loginPage.Submit)
+
+	adminHandler := httpapi.NewAdmin(users, groups)
+	admin := router.Group("/api/admin", authHandler.RequireAdmin())
+	admin.GET("/users", adminHandler.ListUsers)
+	admin.PATCH("/users/:id", adminHandler.PatchUser)
+	admin.GET("/groups", adminHandler.ListGroups)
+	admin.POST("/groups", adminHandler.CreateGroup)
+	admin.PATCH("/groups/:id", adminHandler.PatchGroup)
+	admin.DELETE("/groups/:id", adminHandler.DeleteGroup)
+	admin.GET("/groups/:id/members", adminHandler.GroupMembers)
+	admin.PUT("/groups/:id/members", adminHandler.SetGroupMembers)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

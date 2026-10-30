@@ -83,20 +83,38 @@ func (h *Auth) Me(c *gin.Context) {
 
 func (h *Auth) RequireUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token, _ := c.Cookie(sessionCookie)
-		if token == "" {
-			token = bearerToken(c)
-		}
-
-		user, err := h.service.Resolve(c.Request.Context(), token)
+		user, err := h.resolve(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 			return
 		}
-
 		c.Set(ctxUserKey, user)
 		c.Next()
 	}
+}
+
+func (h *Auth) RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, err := h.resolve(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+			return
+		}
+		if user.Type != model.UserTypeAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
+			return
+		}
+		c.Set(ctxUserKey, user)
+		c.Next()
+	}
+}
+
+func (h *Auth) resolve(c *gin.Context) (*model.User, error) {
+	token, _ := c.Cookie(sessionCookie)
+	if token == "" {
+		token = bearerToken(c)
+	}
+	return h.service.Resolve(c.Request.Context(), token)
 }
 
 func toUserView(u *model.User) userView {

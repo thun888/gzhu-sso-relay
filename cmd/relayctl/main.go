@@ -48,6 +48,8 @@ func main() {
 		listClients(ctx, db)
 	case "client delete":
 		deleteClient(ctx, db, os.Args[3:])
+	case "user promote":
+		promoteUser(ctx, db, os.Args[3:])
 	default:
 		usage()
 		os.Exit(2)
@@ -148,6 +150,36 @@ func deleteClient(ctx context.Context, db *gorm.DB, args []string) {
 	fmt.Printf("已删除 %s\n", *id)
 }
 
+func promoteUser(ctx context.Context, db *gorm.DB, args []string) {
+	fs := flag.NewFlagSet("user promote", flag.ExitOnError)
+	id := fs.String("id", "", "学号")
+	revoke := fs.Bool("revoke", false, "取消管理员身份")
+	_ = fs.Parse(args)
+
+	if *id == "" {
+		die(fmt.Errorf("-id 为必填"))
+	}
+
+	kind := int16(model.UserTypeAdmin)
+	if *revoke {
+		kind = model.UserTypeNormal
+	}
+
+	result := db.WithContext(ctx).Model(&model.User{}).Where("id = ?", *id).Update("type", kind)
+	if result.Error != nil {
+		die(fmt.Errorf("更新用户失败: %w", result.Error))
+	}
+	if result.RowsAffected == 0 {
+		die(fmt.Errorf("用户 %s 不存在，需先登录一次 relay", *id))
+	}
+
+	if *revoke {
+		fmt.Printf("%s 已取消管理员\n", *id)
+		return
+	}
+	fmt.Printf("%s 已设为管理员\n", *id)
+}
+
 func splitList(raw string) []string {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
@@ -165,6 +197,7 @@ func usage() {
   relayctl client create -id <client_id> -name <名称> -redirect <回调地址[,地址]> [-scopes a,b] [-public]
   relayctl client list
   relayctl client delete -id <client_id>
+  relayctl user promote -id <学号> [-revoke]
 
 需要与 relay 相同的环境变量（RELAY_DB_DSN 等）。`)
 }
