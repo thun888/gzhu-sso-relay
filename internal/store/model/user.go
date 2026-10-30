@@ -1,0 +1,39 @@
+package model
+
+import "time"
+
+const (
+	UserTypeNormal = 0
+	UserTypeAdmin  = 1
+)
+
+const (
+	UserStatusActive   = 0
+	UserStatusDisabled = 1
+)
+
+type User struct {
+	ID           string `gorm:"primaryKey;size:32"`
+	Name         string `gorm:"size:64;not null"`
+	PasswordHash string `gorm:"size:255;not null"`
+	Email        string `gorm:"size:128;not null;index"`
+	Type         int16  `gorm:"not null;default:0"`
+	Status       int16  `gorm:"not null;default:0"`
+	LastLoginAt  *time.Time
+	Timestamps
+}
+
+// OAuthAccount 同时承担上游身份绑定与 profile_data 快照。
+// AccessToken 与 RefreshToken 存 cryptox 密文，Provider 为 gitea 时 ProviderUserID 是 gitea 用户名。
+type OAuthAccount struct {
+	ID             string `gorm:"primaryKey;size:36"`
+	UserID         string `gorm:"size:32;not null;uniqueIndex:idx_oauth_accounts_user_provider,priority:1"`
+	Provider       string `gorm:"size:32;not null;uniqueIndex:idx_oauth_accounts_user_provider,priority:2;uniqueIndex:idx_oauth_accounts_provider_uid,priority:1"`
+	ProviderUserID string `gorm:"size:128;not null;uniqueIndex:idx_oauth_accounts_provider_uid,priority:2"`
+	AccessToken    string `gorm:"type:text"`
+	RefreshToken   string `gorm:"type:text"`
+	ProfileData    []byte `gorm:"type:jsonb"`
+	Timestamps
+}
+
+func (OAuthAccount) TableName() string { return "oauth_accounts" }
