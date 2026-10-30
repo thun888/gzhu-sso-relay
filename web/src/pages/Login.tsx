@@ -1,0 +1,172 @@
+import { useEffect, useState, type FormEvent } from "react"
+import { Eye, EyeOff, Lock, User } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
+
+type LoginPanel = {
+  enabled: boolean
+  title: string
+  body: string
+}
+
+const emptyPanel: LoginPanel = { enabled: true, title: "", body: "" }
+
+function nextTarget() {
+  const raw = new URLSearchParams(window.location.search).get("next") ?? ""
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) {
+    return "/"
+  }
+  return raw
+}
+
+export default function Login() {
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [revealed, setRevealed] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState("")
+  const [panel, setPanel] = useState<LoginPanel>(emptyPanel)
+
+  useEffect(() => {
+    let alive = true
+    fetch("/api/public/config")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { login_panel?: LoginPanel } | null) => {
+        if (alive && data?.login_panel) setPanel(data.login_panel)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const showPanel = panel.enabled && Boolean(panel.title || panel.body)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (pending) return
+
+    setError("")
+    setPending(true)
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password }),
+      })
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null
+        setError(data?.error ?? "登录失败，请稍后重试")
+        return
+      }
+
+      window.location.replace(nextTarget())
+    } catch {
+      setError("网络异常，请稍后重试")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div
+      className="min-h-screen w-full bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url(/background.webp)" }}
+    >
+      <div className="flex min-h-screen w-full items-center justify-center px-5 py-10">
+        <div
+          className={cn(
+            "w-full overflow-hidden rounded-2xl border border-zinc-200/70 bg-white/95",
+            "shadow-[0_1px_2px_rgba(16,24,40,0.05),0_28px_72px_-28px_rgba(16,24,40,0.28)]",
+            "backdrop-blur-sm",
+            showPanel ? "max-w-[800px]" : "max-w-[400px]",
+          )}
+        >
+          <div className={cn(showPanel && "md:grid md:grid-cols-[minmax(0,1fr)_296px]")}>
+            <div className="px-7 py-9 sm:px-10">
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+                <span className="text-[12px] tracking-[0.12em] text-zinc-400">广州大学</span>
+              </div>
+
+              <h1 className="mt-6 text-[21px] font-medium tracking-tight text-zinc-900">
+                统一身份认证
+              </h1>
+              <p className="mt-1.5 text-[13px] text-zinc-500">欢迎回来，请使用以下方式登录</p>
+
+              <form className="mt-7" onSubmit={handleSubmit}>
+                <div className="relative">
+                  <User
+                    className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-400"
+                    strokeWidth={1.75}
+                  />
+                  <Input
+                    className="pl-10"
+                    placeholder="请输入教工号或学号"
+                    aria-label="教工号或学号"
+                    autoComplete="username"
+                    autoFocus
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                  />
+                </div>
+
+                <div className="relative mt-3">
+                  <Lock
+                    className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-400"
+                    strokeWidth={1.75}
+                  />
+                  <Input
+                    className="pr-11 pl-10"
+                    type={revealed ? "text" : "password"}
+                    placeholder="请输入密码"
+                    aria-label="密码"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    aria-label={revealed ? "隐藏密码" : "显示密码"}
+                    onClick={() => setRevealed((value) => !value)}
+                    className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-md p-1.5 text-zinc-400 transition-colors hover:text-zinc-600"
+                  >
+                    {revealed ? (
+                      <EyeOff className="h-4 w-4" strokeWidth={1.75} />
+                    ) : (
+                      <Eye className="h-4 w-4" strokeWidth={1.75} />
+                    )}
+                  </button>
+                </div>
+
+                <p className="mt-2 min-h-[18px] text-[12.5px] text-red-600" role="alert">
+                  {error}
+                </p>
+
+                <Button type="submit" disabled={pending || !username.trim() || !password}>
+                  {pending ? "登录中" : "登录"}
+                </Button>
+              </form>
+            </div>
+
+            {showPanel && (
+              <aside className="hidden flex-col justify-center gap-3 border-l border-zinc-100 bg-brand-soft px-7 py-10 md:flex">
+                {panel.title && (
+                  <div className="text-[15px] font-medium text-brand-deep">{panel.title}</div>
+                )}
+                {panel.body && (
+                  <p className="text-[13px] leading-[1.9] whitespace-pre-line text-zinc-600">
+                    {panel.body}
+                  </p>
+                )}
+              </aside>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

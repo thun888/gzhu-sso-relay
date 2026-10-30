@@ -143,3 +143,7 @@ func authError(err error) (int, string) {
 		return http.StatusInternalServerError, "登录失败"
 	}
 }
+
+func setSessionCookie(c *gin.Context, value string, maxAge int, secure bool) {
+	c.SetCookie(sessionCookie, value, maxAge, "/", "", secure, true)
+}

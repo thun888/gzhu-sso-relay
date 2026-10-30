@@ -24,6 +24,14 @@ type Server struct {
 	LoginURL       string       `yaml:"login_url"`
 	EmailDomains   EmailDomains `yaml:"email_domains"`
 	SigningKeyPath string       `yaml:"signing_key_path"`
+	LoginPanel     LoginPanel   `yaml:"login_panel"`
+}
+
+// LoginPanel 控制登录页右半区的预留文案，enabled 为 false 时登录卡片收成单栏。
+type LoginPanel struct {
+	Enabled bool   `yaml:"enabled"`
+	Title   string `yaml:"title"`
+	Body    string `yaml:"body"`
 }
 
 // EmailDomains 按 sub 前缀匹配邮箱后缀，取最长匹配。键为空字符串时匹配所有 sub，可作兜底。
@@ -87,6 +95,11 @@ func defaults() *Config {
 			BaseURL:        "http://localhost:8080",
 			LoginURL:       "/login",
 			SigningKeyPath: "./data/signing_key.pem",
+			LoginPanel: LoginPanel{
+				Enabled: true,
+				Title:   "统一身份认证门户",
+				Body:    "此处为预留说明区域，可在 config.yaml 的 server.login_panel 中修改文案，或将 enabled 设为 false 隐藏本区域。",
+			},
 		},
 		Redis: Redis{Addr: "localhost:6379"},
 		Upstream: Upstream{

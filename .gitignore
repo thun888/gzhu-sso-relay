@@ -2,3 +2,4 @@ bin/
 *.exe
 config.yaml
 data/
+web/node_modules/

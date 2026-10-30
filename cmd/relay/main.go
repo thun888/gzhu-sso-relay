@@ -25,6 +25,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
+	"github.com/thun888/gzhu-sso-relay/web"
 )
 
 func main() {
@@ -89,10 +90,6 @@ func run() error {
 	})
 	secure := strings.HasPrefix(cfg.Server.BaseURL, "https://")
 	authHandler := httpapi.NewAuth(authService, secure)
-	loginPage, err := httpapi.NewLoginPage(authService, secure)
-	if err != nil {
-		return err
-	}
 
 	provider := oidc.New(oidc.Options{
 		Issuer:   cfg.Server.BaseURL,
@@ -113,11 +110,10 @@ func run() error {
 	router.GET("/oidc/authorize", provider.Authorize)
 	router.POST("/oidc/token", provider.Token)
 	router.GET("/oidc/userinfo", provider.UserInfo)
+	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server.LoginPanel))
 	router.POST("/api/login", authHandler.Login)
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), authHandler.Me)
-	router.GET("/login", loginPage.Show)
-	router.POST("/login", loginPage.Submit)
 
 	adminHandler := httpapi.NewAdmin(users, groups)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())
@@ -129,6 +125,12 @@ func run() error {
 	admin.DELETE("/groups/:id", adminHandler.DeleteGroup)
 	admin.GET("/groups/:id/members", adminHandler.GroupMembers)
 	admin.PUT("/groups/:id/members", adminHandler.SetGroupMembers)
+
+	spa, err := web.Handler()
+	if err != nil {
+		return err
+	}
+	router.NoRoute(spaRoute(spa))
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
@@ -193,4 +195,15 @@ func pingDatabase(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 	return sqlDB.PingContext(ctx)
+}
+
+func spaRoute(spa http.Handler) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/oidc/") || path == "/healthz" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		spa.ServeHTTP(c.Writer, c.Request)
+	}
 }
