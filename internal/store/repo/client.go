@@ -85,3 +85,109 @@ func (r *ClientRepo) UserInAnyGroup(ctx context.Context, userID string, groupIDs
 	}
 	return count > 0, nil
 }
+
+func (r *ClientRepo) List(ctx context.Context) ([]model.OAuthClient, error) {
+	var clients []model.OAuthClient
+	if err := r.db.WithContext(ctx).Order("client_id").Find(&clients).Error; err != nil {
+		return nil, fmt.Errorf("repo: 列出应用: %w", err)
+	}
+	return clients, nil
+}
+
+func (r *ClientRepo) Create(ctx context.Context, client *model.OAuthClient) error {
+	if err := r.db.WithContext(ctx).Create(client).Error; err != nil {
+		return fmt.Errorf("repo: 创建应用 %s: %w", client.ClientID, err)
+	}
+	return nil
+}
+
+func (r *ClientRepo) Update(ctx context.Context, clientID string, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	err := r.db.WithContext(ctx).Model(&model.OAuthClient{}).
+		Where("client_id = ?", clientID).
+		Updates(fields).Error
+	if err != nil {
+		return fmt.Errorf("repo: 更新应用 %s: %w", clientID, err)
+	}
+	return nil
+}
+
+func (r *ClientRepo) Delete(ctx context.Context, clientID string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, target := range []any{&model.ClientAllowedScope{}, &model.GroupOAuthClient{}} {
+			if err := tx.Where("client_id = ?", clientID).Delete(target).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Where("client_id = ?", clientID).Delete(&model.OAuthClient{}).Error
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 删除应用 %s: %w", clientID, err)
+	}
+	return nil
+}
+
+// ScopesOf 返回应用显式申请的 scope，不含全局默认项。
+func (r *ClientRepo) ScopesOf(ctx context.Context, clientID string) ([]string, error) {
+	var names []string
+	err := r.db.WithContext(ctx).Model(&model.ClientAllowedScope{}).
+		Where("client_id = ?", clientID).
+		Order("scope_name").
+		Pluck("scope_name", &names).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询应用 %s 的 scope: %w", clientID, err)
+	}
+	return names, nil
+}
+
+func (r *ClientRepo) SetScopes(ctx context.Context, clientID string, names []string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("client_id = ?", clientID).Delete(&model.ClientAllowedScope{}).Error; err != nil {
+			return err
+		}
+		for _, name := range names {
+			link := model.ClientAllowedScope{ClientID: clientID, ScopeName: name}
+			if err := tx.Create(&link).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 设置应用 %s 的 scope: %w", clientID, err)
+	}
+	return nil
+}
+
+func (r *ClientRepo) GroupIDsOf(ctx context.Context, clientID string) ([]uint64, error) {
+	var ids []uint64
+	err := r.db.WithContext(ctx).Model(&model.GroupOAuthClient{}).
+		Where("client_id = ?", clientID).
+		Order("group_id").
+		Pluck("group_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询应用 %s 的用户组: %w", clientID, err)
+	}
+	return ids, nil
+}
+
+func (r *ClientRepo) SetGroups(ctx context.Context, clientID string, groupIDs []uint64) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("client_id = ?", clientID).Delete(&model.GroupOAuthClient{}).Error; err != nil {
+			return err
+		}
+		for _, groupID := range groupIDs {
+			link := model.GroupOAuthClient{ClientID: clientID, GroupID: groupID}
+			if err := tx.Create(&link).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 设置应用 %s 的用户组: %w", clientID, err)
+	}
+	return nil
+}

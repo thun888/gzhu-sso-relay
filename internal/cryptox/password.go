@@ -65,3 +65,16 @@ func VerifyPassword(encoded, password string) (bool, error) {
 	got := argon2.IDKey([]byte(password), salt, time, memory, threads, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
+
+// NewSecret 生成客户端密钥，返回明文与其哈希，明文只交付一次。
+func NewSecret() (plain, hash string, err error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	plain = base64.RawURLEncoding.EncodeToString(buf)
+	if hash, err = HashPassword(plain); err != nil {
+		return "", "", err
+	}
+	return plain, hash, nil
+}

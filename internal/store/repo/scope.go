@@ -28,3 +28,11 @@ func (r *ScopeRepo) ByNames(ctx context.Context, names []string) ([]model.Scope,
 	}
 	return scopes, nil
 }
+
+func (r *ScopeRepo) List(ctx context.Context) ([]model.Scope, error) {
+	var scopes []model.Scope
+	if err := r.db.WithContext(ctx).Order("is_default DESC, name").Find(&scopes).Error; err != nil {
+		return nil, fmt.Errorf("repo: 列出 scope: %w", err)
+	}
+	return scopes, nil
+}

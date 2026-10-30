@@ -137,6 +137,7 @@ func run() error {
 	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
 	adminHandler := httpapi.NewAdmin(users, groups)
+	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, registry)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())
 	admin.GET("/users", adminHandler.ListUsers)
 	admin.PATCH("/users/:id", adminHandler.PatchUser)
@@ -146,6 +147,14 @@ func run() error {
 	admin.DELETE("/groups/:id", adminHandler.DeleteGroup)
 	admin.GET("/groups/:id/members", adminHandler.GroupMembers)
 	admin.PUT("/groups/:id/members", adminHandler.SetGroupMembers)
+	admin.GET("/scopes", adminClients.Scopes)
+	admin.GET("/bindings", adminClients.Bindings)
+	admin.GET("/clients", adminClients.List)
+	admin.POST("/clients", adminClients.Create)
+	admin.PATCH("/clients/:id", adminClients.Patch)
+	admin.DELETE("/clients/:id", adminClients.Delete)
+	admin.PUT("/clients/:id/scopes", adminClients.SetScopes)
+	admin.PUT("/clients/:id/groups", adminClients.SetGroups)
 
 	spa, err := web.Handler()
 	if err != nil {

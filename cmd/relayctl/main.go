@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
@@ -72,16 +70,11 @@ func createClient(ctx context.Context, db *gorm.DB, args []string) {
 
 	var secret, hash string
 	if !*public {
-		buf := make([]byte, 32)
-		if _, err := rand.Read(buf); err != nil {
-			die(err)
-		}
-		secret = base64.RawURLEncoding.EncodeToString(buf)
-		h, err := cryptox.HashPassword(secret)
+		plain, hashed, err := cryptox.NewSecret()
 		if err != nil {
 			die(err)
 		}
-		hash = h
+		secret, hash = plain, hashed
 	}
 
 	client := model.OAuthClient{

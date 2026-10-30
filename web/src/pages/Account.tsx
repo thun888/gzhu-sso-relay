@@ -190,13 +190,17 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
           </div>
         )}
 
-        <div className="mt-8 flex items-center justify-between">
+        <div className="mt-8 flex items-center justify-between gap-3">
           <Button variant="outline" className="h-10" onClick={logout}>
             退出登录
           </Button>
-          <span className="text-[12px] text-muted-foreground">
-            {me.type === 1 ? "管理员" : "普通用户"}
-          </span>
+          {me.type === 1 ? (
+            <Button asChild className="h-10">
+              <a href="/admin">管理后台</a>
+            </Button>
+          ) : (
+            <span className="text-[12px] text-muted-foreground">普通用户</span>
+          )}
         </div>
       </div>
     </PageShell>
