@@ -1,0 +1,29 @@
+## relay 配置模板：复制为 config.yaml 后按实际环境修改
+## 用法：./relay -config config.yaml
+
+server:
+  addr: ":8080"
+  # 该地址即 OIDC issuer，会写进 id_token 的 iss 与 discovery 文档，必须与外部访问地址一致
+  base_url: "http://localhost:8080"
+  # 未登录访问 /oidc/authorize 时跳转到的登录页
+  login_url: "/login"
+  # users.email 的域名，邮件地址生成为 <学号>@<email_domain>
+  email_domain: "gzhu.edu.cn"
+  # 首次启动自动生成 RS256 签名密钥，需持久化并纳入备份
+  signing_key_path: "./data/signing_key.pem"
+
+# 32 字节密钥，base64 或 hex 编码，用于加密上游令牌。可用 openssl rand -base64 32 生成
+secret_key: ""
+
+database:
+  dsn: "postgres://relay:relay@localhost:5432/relay?sslmode=disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+upstream:
+  cas_base_url: "https://newcas.gzhu.edu.cn"
+  portal_base_url: "https://newmy.gzhu.edu.cn"
+  timeout: 30s

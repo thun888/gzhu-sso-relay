@@ -20,12 +20,13 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 3 {
+	args, configPath := splitConfigFlag(os.Args[1:])
+	if len(args) < 2 {
 		usage()
 		os.Exit(2)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		die(err)
 	}
@@ -41,15 +42,15 @@ func main() {
 	}
 
 	ctx := context.Background()
-	switch os.Args[1] + " " + os.Args[2] {
+	switch args[0] + " " + args[1] {
 	case "client create":
-		createClient(ctx, db, os.Args[3:])
+		createClient(ctx, db, args[2:])
 	case "client list":
 		listClients(ctx, db)
 	case "client delete":
-		deleteClient(ctx, db, os.Args[3:])
+		deleteClient(ctx, db, args[2:])
 	case "user promote":
-		promoteUser(ctx, db, os.Args[3:])
+		promoteUser(ctx, db, args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -180,6 +181,30 @@ func promoteUser(ctx context.Context, db *gorm.DB, args []string) {
 	fmt.Printf("%s 已设为管理员\n", *id)
 }
 
+// splitConfigFlag 把 -config 从参数里摘出来，其余参数保持原有顺序。
+func splitConfigFlag(args []string) ([]string, string) {
+	path := "config.yaml"
+	rest := make([]string, 0, len(args))
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-config" || arg == "--config":
+			if i+1 < len(args) {
+				path = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(arg, "-config="):
+			path = strings.TrimPrefix(arg, "-config=")
+		case strings.HasPrefix(arg, "--config="):
+			path = strings.TrimPrefix(arg, "--config=")
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return rest, path
+}
+
 func splitList(raw string) []string {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
@@ -194,12 +219,14 @@ func splitList(raw string) []string {
 func usage() {
 	fmt.Fprintln(os.Stderr, `relayctl 管理命令
 
+  relayctl [-config 路径] <命令>
+
   relayctl client create -id <client_id> -name <名称> -redirect <回调地址[,地址]> [-scopes a,b] [-public]
   relayctl client list
   relayctl client delete -id <client_id>
   relayctl user promote -id <学号> [-revoke]
 
-需要与 relay 相同的环境变量（RELAY_DB_DSN 等）。`)
+-config 缺省为当前目录的 config.yaml，只需其中 database.dsn 可用。`)
 }
 
 func die(err error) {

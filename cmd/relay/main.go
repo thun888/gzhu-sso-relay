@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -33,12 +34,15 @@ func main() {
 }
 
 func run() error {
-	cfg, err := config.Load()
+	path := flag.String("config", "config.yaml", "配置文件路径")
+	flag.Parse()
+
+	cfg, err := config.Load(*path)
 	if err != nil {
 		return err
 	}
 
-	key, err := cryptox.ParseKey(cfg.Secret)
+	key, err := cryptox.ParseKey(cfg.SecretKey)
 	if err != nil {
 		return err
 	}
@@ -60,7 +64,7 @@ func run() error {
 	rdb := cache.Open(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	defer rdb.Close()
 
-	keys, err := oidc.LoadOrCreateKeys(cfg.SigningKeyPath)
+	keys, err := oidc.LoadOrCreateKeys(cfg.Server.SigningKeyPath)
 	if err != nil {
 		return err
 	}
@@ -77,13 +81,13 @@ func run() error {
 		Sessions: sessions,
 		Throttle: auth.NewThrottle(rdb),
 		Upstream: auth.Upstream{
-			CASBaseURL:    cfg.CAS.BaseURL,
-			PortalBaseURL: cfg.Portal.BaseURL,
-			Timeout:       30 * time.Second,
+			CASBaseURL:    cfg.Upstream.CASBaseURL,
+			PortalBaseURL: cfg.Upstream.PortalBaseURL,
+			Timeout:       cfg.Upstream.Timeout.Std(),
 		},
-		EmailDomain: cfg.EmailDomain,
+		EmailDomain: cfg.Server.EmailDomain,
 	})
-	secure := strings.HasPrefix(cfg.BaseURL, "https://")
+	secure := strings.HasPrefix(cfg.Server.BaseURL, "https://")
 	authHandler := httpapi.NewAuth(authService, secure)
 	loginPage, err := httpapi.NewLoginPage(authService, secure)
 	if err != nil {
@@ -91,8 +95,8 @@ func run() error {
 	}
 
 	provider := oidc.New(oidc.Options{
-		Issuer:   cfg.BaseURL,
-		LoginURL: cfg.LoginURL,
+		Issuer:   cfg.Server.BaseURL,
+		LoginURL: cfg.Server.LoginURL,
 		Keys:     keys,
 		Clients:  clients,
 		Accounts: accounts,
@@ -127,7 +131,7 @@ func run() error {
 	admin.PUT("/groups/:id/members", adminHandler.SetGroupMembers)
 
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
+		Addr:              cfg.Server.Addr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -137,7 +141,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("relay 监听 %s", cfg.HTTPAddr)
+		log.Printf("relay 监听 %s", cfg.Server.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
