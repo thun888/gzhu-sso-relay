@@ -85,7 +85,7 @@ func run() error {
 			PortalBaseURL: cfg.Upstream.PortalBaseURL,
 			Timeout:       cfg.Upstream.Timeout.Std(),
 		},
-		EmailDomain: cfg.Server.EmailDomain,
+		EmailDomains: cfg.Server.EmailDomains,
 	})
 	secure := strings.HasPrefix(cfg.Server.BaseURL, "https://")
 	authHandler := httpapi.NewAuth(authService, secure)

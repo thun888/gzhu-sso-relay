@@ -137,6 +137,8 @@ func authError(err error) (int, string) {
 		return http.StatusTooManyRequests, "尝试次数过多，请稍后再试"
 	case errors.Is(err, auth.ErrUpstreamUnavailable):
 		return http.StatusBadGateway, "上游认证服务不可用"
+	case errors.Is(err, auth.ErrNoEmailDomain):
+		return http.StatusInternalServerError, "该学号没有匹配的邮箱域名配置"
 	default:
 		return http.StatusInternalServerError, "登录失败"
 	}

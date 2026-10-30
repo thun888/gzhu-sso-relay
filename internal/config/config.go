@@ -19,11 +19,31 @@ type Config struct {
 }
 
 type Server struct {
-	Addr           string `yaml:"addr"`
-	BaseURL        string `yaml:"base_url"`
-	LoginURL       string `yaml:"login_url"`
-	EmailDomain    string `yaml:"email_domain"`
-	SigningKeyPath string `yaml:"signing_key_path"`
+	Addr           string       `yaml:"addr"`
+	BaseURL        string       `yaml:"base_url"`
+	LoginURL       string       `yaml:"login_url"`
+	EmailDomains   EmailDomains `yaml:"email_domains"`
+	SigningKeyPath string       `yaml:"signing_key_path"`
+}
+
+// EmailDomains 按 sub 前缀匹配邮箱后缀，取最长匹配。键为空字符串时匹配所有 sub，可作兜底。
+type EmailDomains map[string]string
+
+// Suffix 返回 sub 对应的邮箱后缀。
+func (d EmailDomains) Suffix(sub string) (string, bool) {
+	matched, found := "", false
+	for prefix := range d {
+		if !strings.HasPrefix(sub, prefix) {
+			continue
+		}
+		if !found || len(prefix) > len(matched) {
+			matched, found = prefix, true
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return d[matched], true
 }
 
 type Database struct {
@@ -66,7 +86,6 @@ func defaults() *Config {
 			Addr:           ":8080",
 			BaseURL:        "http://localhost:8080",
 			LoginURL:       "/login",
-			EmailDomain:    "gzhu.edu.cn",
 			SigningKeyPath: "./data/signing_key.pem",
 		},
 		Redis: Redis{Addr: "localhost:6379"},
@@ -96,8 +115,17 @@ func (c *Config) validate() error {
 	if c.Server.BaseURL == "" {
 		missing = append(missing, "server.base_url")
 	}
+	if len(c.Server.EmailDomains) == 0 {
+		missing = append(missing, "server.email_domains")
+	}
 	if len(missing) > 0 {
 		return errors.New("缺少必需项: " + strings.Join(missing, ", "))
+	}
+
+	for prefix, suffix := range c.Server.EmailDomains {
+		if suffix == "" {
+			return fmt.Errorf("server.email_domains[%q] 的后缀不能为空", prefix)
+		}
 	}
 
 	if c.Upstream.Timeout <= 0 {

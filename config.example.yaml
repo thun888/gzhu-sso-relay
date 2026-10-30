@@ -7,8 +7,11 @@ server:
   base_url: "http://localhost:8080"
   # 未登录访问 /oidc/authorize 时跳转到的登录页
   login_url: "/login"
-  # users.email 的域名，邮件地址生成为 <学号>@<email_domain>
-  email_domain: "gzhu.edu.cn"
+  # 按 sub 前缀匹配邮箱后缀，最长前缀优先；邮箱生成为 <sub>@<后缀>。
+  # 键为空字符串时匹配所有 sub，可作兜底；删掉后未命中前缀的账号将无法创建
+  email_domains:
+    "3": "e.gzhu.edu.cn"
+    "": "gzhu.edu.cn"
   # 首次启动自动生成 RS256 签名密钥，需持久化并纳入备份
   signing_key_path: "./data/signing_key.pem"
 

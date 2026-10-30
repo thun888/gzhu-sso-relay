@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"time"
 
+	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
@@ -18,6 +19,7 @@ import (
 
 var (
 	ErrInvalidCredentials  = errors.New("auth: 账号或密码错误")
+	ErrNoEmailDomain       = errors.New("auth: 该学号没有匹配的邮箱域名前缀")
 	ErrTooManyAttempts     = errors.New("auth: 尝试次数过多，请稍后再试")
 	ErrUpstreamUnavailable = errors.New("auth: 上游认证服务不可用")
 )
@@ -29,31 +31,31 @@ type Upstream struct {
 }
 
 type Service struct {
-	users       *repo.UserRepo
-	accounts    *repo.AccountRepo
-	sessions    *session.Manager
-	throttle    *Throttle
-	upstream    Upstream
-	emailDomain string
+	users        *repo.UserRepo
+	accounts     *repo.AccountRepo
+	sessions     *session.Manager
+	throttle     *Throttle
+	upstream     Upstream
+	emailDomains config.EmailDomains
 }
 
 type Options struct {
-	Users       *repo.UserRepo
-	Accounts    *repo.AccountRepo
-	Sessions    *session.Manager
-	Throttle    *Throttle
-	Upstream    Upstream
-	EmailDomain string
+	Users        *repo.UserRepo
+	Accounts     *repo.AccountRepo
+	Sessions     *session.Manager
+	Throttle     *Throttle
+	Upstream     Upstream
+	EmailDomains config.EmailDomains
 }
 
 func NewService(opts Options) *Service {
 	return &Service{
-		users:       opts.Users,
-		accounts:    opts.Accounts,
-		sessions:    opts.Sessions,
-		throttle:    opts.Throttle,
-		upstream:    opts.Upstream,
-		emailDomain: opts.EmailDomain,
+		users:        opts.Users,
+		accounts:     opts.Accounts,
+		sessions:     opts.Sessions,
+		throttle:     opts.Throttle,
+		upstream:     opts.Upstream,
+		emailDomains: opts.EmailDomains,
 	}
 }
 
@@ -124,11 +126,16 @@ func (s *Service) provision(ctx context.Context, id, password string) (*Result, 
 		return nil, err
 	}
 
+	suffix, ok := s.emailDomains.Suffix(profile.Sub)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNoEmailDomain, profile.Sub)
+	}
+
 	user := &model.User{
 		ID:           id,
 		Name:         profile.Name,
 		PasswordHash: hash,
-		Email:        id + "@" + s.emailDomain,
+		Email:        profile.Sub + "@" + suffix,
 		Type:         model.UserTypeNormal,
 		Status:       model.UserStatusActive,
 	}
