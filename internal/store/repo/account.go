@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -70,4 +71,104 @@ func (r *AccountRepo) ProfileData(ctx context.Context, userID, provider string) 
 		return nil, fmt.Errorf("repo: 读取 %s/%s 的 profile_data: %w", userID, provider, err)
 	}
 	return raw, nil
+}
+
+// ClassOf 从快照里取班级，快照缺失或未记录时返回空串。
+func (r *AccountRepo) ClassOf(ctx context.Context, userID, provider string) string {
+	raw, err := r.ProfileData(ctx, userID, provider)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+
+	var snapshot struct {
+		Class string `json:"belong_class"`
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return ""
+	}
+	return snapshot.Class
+}
+
+type BindingProfile struct {
+	DisplayName string          `json:"display_name"`
+	Raw         json.RawMessage `json:"raw"`
+}
+
+type Binding struct {
+	Provider       string    `json:"provider"`
+	ProviderUserID string    `json:"provider_user_id"`
+	DisplayName    string    `json:"display_name"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// Bind 写入第三方账号绑定，同一用户同一来源只保留一条。
+func (r *AccountRepo) Bind(ctx context.Context, userID, provider, providerUserID, displayName string, raw []byte) error {
+	profile, err := json.Marshal(BindingProfile{DisplayName: displayName, Raw: raw})
+	if err != nil {
+		return fmt.Errorf("repo: 序列化绑定快照: %w", err)
+	}
+
+	account := model.OAuthAccount{
+		UserID:         userID,
+		Provider:       provider,
+		ProviderUserID: providerUserID,
+		ProfileData:    profile,
+	}
+
+	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "provider"}},
+		DoUpdates: clause.AssignmentColumns([]string{"provider_user_id", "profile_data", "updated_at"}),
+	}).Create(&account).Error
+	if err != nil {
+		return fmt.Errorf("repo: 写入绑定 %s/%s: %w", userID, provider, err)
+	}
+	return nil
+}
+
+func (r *AccountRepo) Unbind(ctx context.Context, userID, provider string) error {
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND provider = ?", userID, provider).
+		Delete(&model.OAuthAccount{}).Error
+	if err != nil {
+		return fmt.Errorf("repo: 解除绑定 %s/%s: %w", userID, provider, err)
+	}
+	return nil
+}
+
+func (r *AccountRepo) BindingsOf(ctx context.Context, userID string) ([]Binding, error) {
+	var accounts []model.OAuthAccount
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("provider").
+		Find(&accounts).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询 %s 的绑定: %w", userID, err)
+	}
+
+	out := make([]Binding, 0, len(accounts))
+	for _, account := range accounts {
+		display := account.ProviderUserID
+		var profile BindingProfile
+		if len(account.ProfileData) > 0 && json.Unmarshal(account.ProfileData, &profile) == nil && profile.DisplayName != "" {
+			display = profile.DisplayName
+		}
+		out = append(out, Binding{
+			Provider:       account.Provider,
+			ProviderUserID: account.ProviderUserID,
+			DisplayName:    display,
+			UpdatedAt:      account.UpdatedAt,
+		})
+	}
+	return out, nil
+}
+
+func (r *AccountRepo) HasBinding(ctx context.Context, userID, provider string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.OAuthAccount{}).
+		Where("user_id = ? AND provider = ?", userID, provider).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("repo: 检查 %s/%s 的绑定: %w", userID, provider, err)
+	}
+	return count > 0, nil
 }

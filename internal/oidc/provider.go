@@ -19,8 +19,10 @@ import (
 const accessTokenTTL = time.Hour
 
 type Provider struct {
-	Issuer   string
-	LoginURL string
+	Issuer     string
+	LoginURL   string
+	ConsentURL string
+	AccountURL string
 
 	keys     *Keys
 	clients  *repo.ClientRepo
@@ -28,29 +30,39 @@ type Provider struct {
 	users    *repo.UserRepo
 	sessions *session.Manager
 	codes    *CodeStore
+	consents *repo.ConsentRepo
+	pending  *PendingStore
 }
 
 type Options struct {
-	Issuer   string
-	LoginURL string
-	Keys     *Keys
-	Clients  *repo.ClientRepo
-	Accounts *repo.AccountRepo
-	Users    *repo.UserRepo
-	Sessions *session.Manager
-	Codes    *CodeStore
+	Issuer     string
+	LoginURL   string
+	ConsentURL string
+	AccountURL string
+	Keys       *Keys
+	Clients    *repo.ClientRepo
+	Accounts   *repo.AccountRepo
+	Users      *repo.UserRepo
+	Sessions   *session.Manager
+	Codes      *CodeStore
+	Consents   *repo.ConsentRepo
+	Pending    *PendingStore
 }
 
 func New(opts Options) *Provider {
 	return &Provider{
-		Issuer:   strings.TrimSuffix(opts.Issuer, "/"),
-		LoginURL: opts.LoginURL,
-		keys:     opts.Keys,
-		clients:  opts.Clients,
-		accounts: opts.Accounts,
-		users:    opts.Users,
-		sessions: opts.Sessions,
-		codes:    opts.Codes,
+		Issuer:     strings.TrimSuffix(opts.Issuer, "/"),
+		LoginURL:   opts.LoginURL,
+		ConsentURL: opts.ConsentURL,
+		AccountURL: opts.AccountURL,
+		keys:       opts.Keys,
+		clients:    opts.Clients,
+		accounts:   opts.Accounts,
+		users:      opts.Users,
+		sessions:   opts.Sessions,
+		codes:      opts.Codes,
+		consents:   opts.Consents,
+		pending:    opts.Pending,
 	}
 }
 

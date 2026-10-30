@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
+	"github.com/thun888/gzhu-sso-relay/internal/binding"
 	"github.com/thun888/gzhu-sso-relay/internal/cache"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
@@ -91,15 +92,30 @@ func run() error {
 	secure := strings.HasPrefix(cfg.Server.BaseURL, "https://")
 	authHandler := httpapi.NewAuth(authService, secure)
 
+	registry, err := binding.NewRegistry(cfg.Bindings.Providers, nil)
+	if err != nil {
+		return err
+	}
+	consents := repo.NewConsentRepo(db)
+	scopeRepo := repo.NewScopeRepo(db)
+	pending := oidc.NewPendingStore(rdb)
+
+	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, binding.NewStateStore(rdb), cfg.Server.BaseURL)
+	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
+
 	provider := oidc.New(oidc.Options{
-		Issuer:   cfg.Server.BaseURL,
-		LoginURL: cfg.Server.LoginURL,
-		Keys:     keys,
-		Clients:  clients,
-		Accounts: accounts,
-		Users:    users,
-		Sessions: sessions,
-		Codes:    oidc.NewCodeStore(rdb),
+		Issuer:     cfg.Server.BaseURL,
+		LoginURL:   cfg.Server.LoginURL,
+		ConsentURL: cfg.Server.ConsentURL,
+		AccountURL: cfg.Server.AccountURL,
+		Consents:   consents,
+		Pending:    pending,
+		Keys:       keys,
+		Clients:    clients,
+		Accounts:   accounts,
+		Users:      users,
+		Sessions:   sessions,
+		Codes:      oidc.NewCodeStore(rdb),
 	})
 
 	router := gin.New()
@@ -113,7 +129,12 @@ func run() error {
 	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server.SiteTitle, cfg.Server.LoginPanel))
 	router.POST("/api/login", authHandler.Login)
 	router.POST("/api/logout", authHandler.Logout)
-	router.GET("/api/me", authHandler.RequireUser(), authHandler.Me)
+	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
+	router.GET("/api/consent", authHandler.RequireUser(), consentHandler.Show)
+	router.POST("/api/consent", authHandler.RequireUser(), consentHandler.Approve)
+	router.GET("/api/bindings/:provider/start", authHandler.RequireUser(), accountHandler.StartBinding)
+	router.DELETE("/api/bindings/:provider", authHandler.RequireUser(), accountHandler.Unbind)
+	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
 	adminHandler := httpapi.NewAdmin(users, groups)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())

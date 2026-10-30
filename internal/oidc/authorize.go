@@ -71,6 +71,40 @@ func (p *Provider) Authorize(c *gin.Context) {
 		return
 	}
 
+	for _, required := range client.RequiredBindings {
+		bound, err := p.accounts.HasBinding(ctx, user.ID, required)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		if !bound {
+			next := url.QueryEscape(c.Request.URL.RequestURI())
+			redirect := p.AccountURL + "?bind=" + url.QueryEscape(required) + "&next=" + next
+			c.Redirect(http.StatusFound, redirect)
+			return
+		}
+	}
+
+	granted, err := p.consents.Scopes(ctx, user.ID, client.ClientID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	if !scopeSubset(scopes, granted) {
+		id, err := p.pending.Save(ctx, Pending{
+			UserID:       user.ID,
+			ClientID:     client.ClientID,
+			Scopes:       scopes,
+			AuthorizeURL: c.Request.URL.RequestURI(),
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		c.Redirect(http.StatusFound, p.ConsentURL+"?req="+url.QueryEscape(id))
+		return
+	}
+
 	challenge := query.Get("code_challenge")
 	method := query.Get("code_challenge_method")
 	if challenge != "" {

@@ -7,6 +7,10 @@ server:
   base_url: "http://localhost:8080"
   # 未登录访问 /oidc/authorize 时跳转到的登录页
   login_url: "/login"
+  # 应用首次申请权限时的确认页
+  consent_url: "/consent"
+  # 登录完成后的用户中心
+  account_url: "/"
   # 登录卡片顶部的品牌行，留空则整行隐藏
   site_title: "广州大学"
   # 按 sub 前缀匹配邮箱后缀，最长前缀优先；邮箱生成为 <sub>@<后缀>。
@@ -37,3 +41,18 @@ upstream:
   cas_base_url: "https://newcas.gzhu.edu.cn"
   portal_base_url: "https://newmy.gzhu.edu.cn"
   timeout: 30s
+
+# 可绑定的第三方账号来源。每个来源走标准 OAuth2 授权码流程，
+# 只要对方支持 authorization code 就能在这里加一条，不需要改代码。
+# id_field / name_field 指对方 userinfo 响应里用作账号标识与展示名的字段。
+bindings:
+  providers:
+    - name: gitea
+      display_name: Gitea
+      client_id: ""
+      client_secret: ""
+      auth_url: "https://git.gzhu.edu.cn/login/oauth/authorize"
+      token_url: "https://git.gzhu.edu.cn/login/oauth/access_token"
+      userinfo_url: "https://git.gzhu.edu.cn/api/v1/user"
+      id_field: "login"
+      name_field: "login"

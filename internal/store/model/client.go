@@ -6,7 +6,9 @@ type OAuthClient struct {
 	SecretHash   string   `gorm:"size:255;not null"`
 	Name         string   `gorm:"size:128;not null"`
 	RedirectURLs []string `gorm:"type:jsonb;serializer:json;not null"`
-	IsPublic     bool     `gorm:"not null;default:false"`
+	// RequiredBindings 列出授权前必须完成的第三方账号绑定，如 ["gitea"]。
+	RequiredBindings []string `gorm:"type:jsonb;serializer:json"`
+	IsPublic         bool     `gorm:"not null;default:false"`
 	Timestamps
 }
 

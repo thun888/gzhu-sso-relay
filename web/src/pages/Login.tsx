@@ -1,50 +1,27 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useState, type FormEvent } from "react"
 import { Eye, EyeOff, Lock, User } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { safeNext, type LoginPanel } from "@/lib/config"
 import { cn } from "@/lib/utils"
 
-type LoginPanel = {
-  enabled: boolean
-  title: string
-  body: string
+type Props = {
+  siteTitle: string
+  panel: LoginPanel
 }
-
-const emptyPanel: LoginPanel = { enabled: true, title: "", body: "" }
 
 function nextTarget() {
-  const raw = new URLSearchParams(window.location.search).get("next") ?? ""
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) {
-    return "/"
-  }
-  return raw
+  return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
 
-export default function Login() {
+export default function Login({ siteTitle, panel }: Props) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [revealed, setRevealed] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState("")
-  const [siteTitle, setSiteTitle] = useState("")
-  const [panel, setPanel] = useState<LoginPanel>(emptyPanel)
-
-  useEffect(() => {
-    let alive = true
-    fetch("/api/public/config")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { site_title?: string; login_panel?: LoginPanel } | null) => {
-        if (!alive || !data) return
-        setSiteTitle(data.site_title ?? "")
-        if (data.login_panel) setPanel(data.login_panel)
-      })
-      .catch(() => undefined)
-    return () => {
-      alive = false
-    }
-  }, [])
 
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
 

@@ -72,15 +72,6 @@ func (h *Auth) Logout(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *Auth) Me(c *gin.Context) {
-	user, ok := c.Get(ctxUserKey)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
-		return
-	}
-	c.JSON(http.StatusOK, toUserView(user.(*model.User)))
-}
-
 func (h *Auth) RequireUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, err := h.resolve(c)

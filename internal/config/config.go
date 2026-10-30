@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/thun888/gzhu-sso-relay/internal/binding"
 )
 
 type Config struct {
@@ -16,12 +18,20 @@ type Config struct {
 	Database  Database `yaml:"database"`
 	Redis     Redis    `yaml:"redis"`
 	Upstream  Upstream `yaml:"upstream"`
+	Bindings  Bindings `yaml:"bindings"`
+}
+
+// Bindings 声明可绑定的第三方账号来源，每个来源走标准 OAuth2 授权码流程。
+type Bindings struct {
+	Providers []binding.Provider `yaml:"providers"`
 }
 
 type Server struct {
 	Addr           string       `yaml:"addr"`
 	BaseURL        string       `yaml:"base_url"`
 	LoginURL       string       `yaml:"login_url"`
+	ConsentURL     string       `yaml:"consent_url"`
+	AccountURL     string       `yaml:"account_url"`
 	SiteTitle      string       `yaml:"site_title"`
 	EmailDomains   EmailDomains `yaml:"email_domains"`
 	SigningKeyPath string       `yaml:"signing_key_path"`
@@ -95,6 +105,8 @@ func defaults() *Config {
 			Addr:           ":8080",
 			BaseURL:        "http://localhost:8080",
 			LoginURL:       "/login",
+			ConsentURL:     "/consent",
+			AccountURL:     "/",
 			SiteTitle:      "广州大学",
 			SigningKeyPath: "./data/signing_key.pem",
 			LoginPanel: LoginPanel{
