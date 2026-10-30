@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,10 +15,14 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	"github.com/thun888/gzhu-sso-relay/internal/auth"
 	"github.com/thun888/gzhu-sso-relay/internal/cache"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
+	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
+	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
+	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
 )
 
 func main() {
@@ -51,9 +56,26 @@ func run() error {
 	rdb := cache.Open(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	defer rdb.Close()
 
+	authService := auth.NewService(auth.Options{
+		Users:    repo.NewUserRepo(db),
+		Accounts: repo.NewAccountRepo(db),
+		Sessions: session.New(rdb),
+		Throttle: auth.NewThrottle(rdb),
+		Upstream: auth.Upstream{
+			CASBaseURL:    cfg.CAS.BaseURL,
+			PortalBaseURL: cfg.Portal.BaseURL,
+			Timeout:       30 * time.Second,
+		},
+		EmailDomain: cfg.EmailDomain,
+	})
+	authHandler := httpapi.NewAuth(authService, strings.HasPrefix(cfg.BaseURL, "https://"))
+
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.GET("/healthz", healthz(db, rdb))
+	router.POST("/api/login", authHandler.Login)
+	router.POST("/api/logout", authHandler.Logout)
+	router.GET("/api/me", authHandler.RequireUser(), authHandler.Me)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

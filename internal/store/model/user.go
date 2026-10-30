@@ -1,6 +1,11 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
 
 const (
 	UserTypeNormal = 0
@@ -37,3 +42,10 @@ type OAuthAccount struct {
 }
 
 func (OAuthAccount) TableName() string { return "oauth_accounts" }
+
+func (a *OAuthAccount) BeforeCreate(*gorm.DB) error {
+	if a.ID == "" {
+		a.ID = uuid.NewString()
+	}
+	return nil
+}
