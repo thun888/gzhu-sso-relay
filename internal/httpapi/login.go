@@ -107,6 +107,9 @@ func safeNext(raw string) string {
 	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
 		return ""
 	}
+	if strings.ContainsAny(raw, "\\\r\n") {
+		return ""
+	}
 	return raw
 }
 
