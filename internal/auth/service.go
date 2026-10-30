@@ -22,6 +22,8 @@ var (
 	ErrNoEmailDomain       = errors.New("auth: 该学号没有匹配的邮箱域名前缀")
 	ErrTooManyAttempts     = errors.New("auth: 尝试次数过多，请稍后再试")
 	ErrUpstreamUnavailable = errors.New("auth: 上游认证服务不可用")
+	ErrUpstreamChallenge   = errors.New("auth: 上游要求验证码，无法自动登录")
+	ErrUpstreamLocked      = errors.New("auth: 上游账号已被临时锁定")
 )
 
 type Upstream struct {
@@ -188,8 +190,13 @@ func (s *Service) authenticateUpstream(ctx context.Context, id, password string)
 	casClient := cas.NewClient(httpClient)
 	casClient.BaseURL = s.upstream.CASBaseURL
 	if err := casClient.Login(ctx, id, password); err != nil {
-		if errors.Is(err, cas.ErrInvalidCredentials) {
+		switch {
+		case errors.Is(err, cas.ErrInvalidCredentials):
 			return portal.Profile{}, ErrInvalidCredentials
+		case errors.Is(err, cas.ErrChallengeRequired):
+			return portal.Profile{}, fmt.Errorf("%w: %v", ErrUpstreamChallenge, err)
+		case errors.Is(err, cas.ErrAccountLocked):
+			return portal.Profile{}, fmt.Errorf("%w: %v", ErrUpstreamLocked, err)
 		}
 		return portal.Profile{}, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -84,16 +85,21 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 		return Profile{}, fmt.Errorf("portal: 用户信息返回 %d", resp.StatusCode)
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return Profile{}, fmt.Errorf("portal: 读取用户信息: %w", err)
+	}
+
 	var raw struct {
 		Mobile      string `json:"MOBILE"`
 		UserName    string `json:"USER_NAME"`
 		BelongClass string `json:"BELONG_CLASS"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&raw); err != nil {
-		return Profile{}, fmt.Errorf("portal: 解析用户信息: %w", err)
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return Profile{}, fmt.Errorf("portal: 解析用户信息: %w: %.120s", err, body)
 	}
 	if raw.Mobile == "" {
-		return Profile{}, ErrProfileUnavailable
+		return Profile{}, fmt.Errorf("%w，返回字段: %s", ErrProfileUnavailable, jsonKeys(body))
 	}
 
 	return Profile{
@@ -101,4 +107,21 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 		Name:  raw.UserName,
 		Class: raw.BelongClass,
 	}, nil
+}
+
+// jsonKeys 列出顶层字段名，用于定位上游返回结构变化，不输出字段值。
+func jsonKeys(body []byte) string {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return "无（响应不是 JSON 对象）"
+	}
+	names := make([]string, 0, len(object))
+	for name := range object {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return "无（空对象）"
+	}
+	return strings.Join(names, ", ")
 }

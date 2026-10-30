@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -48,6 +49,7 @@ func (h *Auth) Login(c *gin.Context) {
 
 	result, err := h.service.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
+		log.Printf("登录失败 id=%s ip=%s: %v", req.Username, c.ClientIP(), err)
 		status, message := authError(err)
 		c.JSON(status, gin.H{"error": message})
 		return
@@ -126,6 +128,10 @@ func authError(err error) (int, string) {
 		return http.StatusUnauthorized, "账号或密码错误"
 	case errors.Is(err, auth.ErrTooManyAttempts):
 		return http.StatusTooManyRequests, "尝试次数过多，请稍后再试"
+	case errors.Is(err, auth.ErrUpstreamLocked):
+		return http.StatusTooManyRequests, "上游账号已被锁定，请稍后再试"
+	case errors.Is(err, auth.ErrUpstreamChallenge):
+		return http.StatusBadGateway, "上游要求验证码，无法自动登录，请联系管理员"
 	case errors.Is(err, auth.ErrUpstreamUnavailable):
 		return http.StatusBadGateway, "上游认证服务不可用"
 	case errors.Is(err, auth.ErrNoEmailDomain):

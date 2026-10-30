@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -22,11 +23,15 @@ const (
 
 var (
 	ErrInvalidCredentials = errors.New("cas: 账号或密码错误")
+	ErrAccountLocked      = errors.New("cas: 上游账号已被锁定")
+	ErrChallengeRequired  = errors.New("cas: 上游要求验证码或其他额外校验")
 
 	ltPattern        = regexp.MustCompile(`name="lt"\s+value="([^"]*)"`)
 	executionPattern = regexp.MustCompile(`name="execution"\s+value="([^"]*)"`)
 	titlePattern     = regexp.MustCompile(`(?is)<title>\s*(.*?)\s*</title>`)
-	passwordPattern  = regexp.MustCompile(`name="password"`)
+	loginFormPattern = regexp.MustCompile(`name="(?:password|lt)"`)
+	noticePattern    = regexp.MustCompile(`(?is)<span[^>]*id="errormsghide"[^>]*>(.*?)</span>`)
+	tagPattern       = regexp.MustCompile(`<[^>]*>`)
 )
 
 type Client struct {
@@ -76,13 +81,32 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 	}
 
 	page := string(body)
-	if passwordPattern.MatchString(page) {
+	if notice := loginNotice(page); notice != "" {
+		switch {
+		case strings.Contains(notice, "验证码"):
+			return ErrChallengeRequired
+		// 锁定提示带「剩余次数」的是失败预警，不带才是真的锁了。
+		case strings.Contains(notice, "锁定") && !strings.Contains(notice, "剩余次数"):
+			return ErrAccountLocked
+		}
+		return fmt.Errorf("%w：%s", ErrInvalidCredentials, notice)
+	}
+	if loginFormPattern.MatchString(page) {
 		return ErrInvalidCredentials
 	}
-	if title := titlePattern.FindStringSubmatch(page); len(title) < 2 || strings.TrimSpace(title[1]) != portalTitle {
-		return fmt.Errorf("cas: 登录后未进入%s，页面标题为 %q", portalTitle, firstMatch(titlePattern, page))
+	if title := strings.TrimSpace(firstMatch(titlePattern, page)); title != portalTitle {
+		return fmt.Errorf("cas: 登录后未进入%s，页面标题为 %q", portalTitle, title)
 	}
 	return nil
+}
+
+// loginNotice 取登录页顶部的提示文案，登录失败时上游会重新渲染登录表单并带上该节点。
+func loginNotice(page string) string {
+	m := noticePattern.FindStringSubmatch(page)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(html.UnescapeString(tagPattern.ReplaceAllString(m[1], "")))
 }
 
 func (c *Client) issueToken(ctx context.Context) (lt, execution string, err error) {
