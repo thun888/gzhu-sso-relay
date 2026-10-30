@@ -63,14 +63,18 @@ func (r *AccountRepo) SaveProfile(ctx context.Context, userID, provider, provide
 }
 
 func (r *AccountRepo) ProfileData(ctx context.Context, userID, provider string) ([]byte, error) {
-	var raw []byte
-	err := r.db.WithContext(ctx).Model(&model.OAuthAccount{}).
+	var a model.OAuthAccount
+	err := r.db.WithContext(ctx).
+		Select("profile_data").
 		Where("user_id = ? AND provider = ?", userID, provider).
-		Pluck("profile_data", &raw).Error
+		Take(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("repo: 读取 %s/%s 的 profile_data: %w", userID, provider, err)
 	}
-	return raw, nil
+	return a.ProfileData, nil
 }
 
 // ClassOf 从快照里取班级，快照缺失或未记录时返回空串。
