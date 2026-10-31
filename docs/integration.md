@@ -18,7 +18,7 @@ relay 对外提供标准 OIDC 授权码流程。应用只需要 discovery 地址
 | --- | --- |
 | `client_id` | 唯一标识，只允许字母、数字、下划线、连字符，最长 64 |
 | `name` | 授权确认页展示的应用名 |
-| `redirect_urls` | 允许的回调地址，可多个；授权时按完整地址匹配，大小写不敏感 |
+| `redirect_urls` | 允许的回调地址，可多个；scheme 与 host 不区分大小写，路径与查询串必须完全一致。`127.0.0.1`、`localhost`、`[::1]` 忽略端口，也可填 `myapp://callback` 这类自定义 scheme |
 | `scopes` | 允许申请的额外 scope，可留空 |
 | `is_public` | 公开客户端不校验密钥，必须使用 PKCE |
 
@@ -68,7 +68,7 @@ GET <issuer>/oidc/authorize?
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `client_id` | 是 | 已注册的应用标识 |
-| `redirect_uri` | 是 | 必须与登记的回调地址一致，大小写不敏感 |
+| `redirect_uri` | 是 | 必须与登记的回调地址一致，规则同上 |
 | `response_type` | 是 | 只支持 `code` |
 | `scope` | 是 | 空格分隔，必须包含 `openid` |
 | `state` | 否 | 原样回传，用于防 CSRF |
@@ -232,10 +232,10 @@ access token 是自包含 JWT，资源服务可以离线校验签名与过期时
 | --- | --- |
 | `unsupported_response_type` | `response_type` 不是 `code` |
 | `invalid_scope` | 缺少 `openid`，或申请了未被允许的 scope |
-| `access_denied` | 用户不在应用限定的用户组内 |
+| `access_denied` | 用户不在应用限定的用户组内，或在确认页取消授权 |
 | `invalid_request` | 不支持的 PKCE 方法，或公开客户端未携带 PKCE |
 
-`client_id` 未知时返回 400：
+`client_id` 未知或应用已停用时返回 400：
 
 ```json
 {"error": "unauthorized_client", "error_description": "未知的 client_id"}
@@ -254,7 +254,8 @@ access token 是自包含 JWT，资源服务可以离线校验签名与过期时
 | `invalid_request` | 400 | 表单无法解析 |
 | `invalid_client` | 401 | 缺少凭据、客户端不存在或密钥错误 |
 | `unsupported_grant_type` | 400 | 不是 `authorization_code` |
-| `invalid_grant` | 400 | 授权码无效、已使用、过期、与客户端或回调不匹配、PKCE 失败、用户被禁用 |
+| `invalid_grant` | 400 | 授权码无效、已被使用、过期、与客户端或回调不匹配、PKCE 失败、用户被禁用 |
+| `too_many_requests` | 429 | 同一来源短时间内失败次数过多，等 5 分钟后重试 |
 | `server_error` | 500 | 签发令牌失败 |
 
 ## 接入示例
@@ -301,6 +302,7 @@ curl -s -H "Authorization: Bearer <access_token>" \
 | 动态注册 | 不支持，应用需在管理后台创建 |
 | 自定义 scope | 当前只内置 `openid`、`profile`、`email`，新增 scope 不会产生额外 claim |
 | 用户组与绑定 | 每次授权重新检查，已签发令牌不受影响 |
+| 应用停用 | 管理后台可停用应用，停用后授权与换取令牌都返回 `unauthorized_client`，配置与授权记录保留 |
 
 ## 上线检查清单
 

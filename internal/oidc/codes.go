@@ -56,9 +56,13 @@ func (s *CodeStore) Issue(ctx context.Context, grant Grant) (string, error) {
 	return code, nil
 }
 
-// Consume 取回并立刻删除授权码，保证一次性使用。
-func (s *CodeStore) Consume(ctx context.Context, code string) (*Grant, error) {
-	raw, err := s.rdb.GetDel(ctx, codePrefix+code).Bytes()
+// Peek 读取授权码但不删除，供令牌端点先完成客户端与 PKCE 校验。
+func (s *CodeStore) Peek(ctx context.Context, code string) (*Grant, error) {
+	if code == "" {
+		return nil, ErrCodeInvalid
+	}
+
+	raw, err := s.rdb.Get(ctx, codePrefix+code).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return nil, ErrCodeInvalid
 	}
@@ -71,4 +75,17 @@ func (s *CodeStore) Consume(ctx context.Context, code string) (*Grant, error) {
 		return nil, fmt.Errorf("oidc: 解析授权码: %w", err)
 	}
 	return &grant, nil
+}
+
+// Consume 删除授权码并报告是否由本次调用删除，保证只有一个请求能换到令牌。
+// 放在校验之后调用，校验失败的请求不会消耗掉别人的授权码。
+func (s *CodeStore) Consume(ctx context.Context, code string) (bool, error) {
+	if code == "" {
+		return false, nil
+	}
+	n, err := s.rdb.Del(ctx, codePrefix+code).Result()
+	if err != nil {
+		return false, fmt.Errorf("oidc: 删除授权码: %w", err)
+	}
+	return n > 0, nil
 }

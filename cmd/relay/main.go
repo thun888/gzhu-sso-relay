@@ -140,13 +140,18 @@ func run() error {
 		Sessions:   sessions,
 		Codes:      oidc.NewCodeStore(rdb),
 		Notifier:   notifier,
+		Limiter:    oidc.NewTokenLimiter(rdb),
 	})
 
 	router := gin.New()
 	if err := router.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
 		return err
 	}
-	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(
+		gin.Logger(),
+		gin.Recovery(),
+		httpapi.OriginGuard(cfg.Server.BaseURL),
+	)
 	router.GET("/healthz", healthz(db, rdb))
 	router.GET("/.well-known/openid-configuration", provider.Discovery)
 	router.GET("/oidc/jwks", provider.JWKS)
@@ -159,11 +164,12 @@ func run() error {
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
 	router.GET("/api/consent", authHandler.RequireUser(), consentHandler.Show)
 	router.POST("/api/consent", authHandler.RequireUser(), consentHandler.Approve)
+	router.POST("/api/consent/deny", authHandler.RequireUser(), consentHandler.Deny)
 	router.GET("/api/bindings/:provider/start", authHandler.RequireUser(), accountHandler.StartBinding)
 	router.DELETE("/api/bindings/:provider", authHandler.RequireUser(), accountHandler.Unbind)
 	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
-	adminHandler := httpapi.NewAdmin(users, groups)
+	adminHandler := httpapi.NewAdmin(users, groups, sessions)
 	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry, logos)
 	router.GET("/api/clients/:id/logo", adminClients.Logo)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())
@@ -199,7 +205,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
-		Handler:           spaOrAPI(router, spa),
+		Handler:           httpapi.WithSecurityHeaders(secure, spaOrAPI(router, spa)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

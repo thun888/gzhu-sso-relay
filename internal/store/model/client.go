@@ -10,7 +10,9 @@ type OAuthClient struct {
 	RequiredBindings []string `gorm:"type:jsonb;serializer:json"`
 	IsPublic         bool     `gorm:"not null;default:false"`
 	// IsPrivate 为 true 时只有用户白名单或限定用户组里的账号能授权。
-	IsPrivate   bool   `gorm:"not null;default:false"`
+	IsPrivate bool `gorm:"not null;default:false"`
+	// Enabled 为 false 时拒绝授权与令牌请求，记录保留以便随时恢复。
+	Enabled     bool   `gorm:"not null;default:true"`
 	HomepageURL string `gorm:"size:255"`
 	Description string `gorm:"size:255"`
 	// LogoType 非空表示 data/logos 下有同名文件，内容类型用于响应头。

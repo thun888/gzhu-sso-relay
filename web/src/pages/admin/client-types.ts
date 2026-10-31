@@ -14,6 +14,7 @@ export type Client = {
   description: string
   is_public: boolean
   is_private: boolean
+  enabled: boolean
   redirect_urls: string[]
   required_bindings: string[]
   scopes: string[]

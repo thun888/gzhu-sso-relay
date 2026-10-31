@@ -70,6 +70,29 @@ export default function Consent({ siteTitle }: { siteTitle: string }) {
     }
   }
 
+  async function deny() {
+    if (pending) return
+    setError("")
+    setPending(true)
+    try {
+      const res = await fetch("/api/consent/deny", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ req }),
+      })
+      if (!res.ok) {
+        window.location.replace("/")
+        return
+      }
+      const data = (await res.json()) as { continue: string }
+      window.location.replace(data.continue)
+    } catch {
+      window.location.replace("/")
+    } finally {
+      setPending(false)
+    }
+  }
+
   if (state.kind === "loading") {
     return (
       <PageShell>
@@ -137,7 +160,7 @@ export default function Consent({ siteTitle }: { siteTitle: string }) {
             variant="outline"
             className="h-11 flex-1"
             disabled={pending}
-            onClick={() => window.location.replace("/")}
+            onClick={deny}
           >
             取消
           </Button>

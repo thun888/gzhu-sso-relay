@@ -34,6 +34,7 @@ type Provider struct {
 	consents  *repo.ConsentRepo
 	pending   *PendingStore
 	notifier  *notify.Notifier
+	limiter   *TokenLimiter
 }
 
 type Options struct {
@@ -50,6 +51,7 @@ type Options struct {
 	Consents   *repo.ConsentRepo
 	Pending    *PendingStore
 	Notifier   *notify.Notifier
+	Limiter    *TokenLimiter
 }
 
 func New(opts Options) *Provider {
@@ -67,6 +69,7 @@ func New(opts Options) *Provider {
 		consents:   opts.Consents,
 		pending:    opts.Pending,
 		notifier:   opts.Notifier,
+		limiter:    opts.Limiter,
 	}
 }
 

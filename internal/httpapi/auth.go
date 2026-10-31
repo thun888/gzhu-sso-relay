@@ -170,5 +170,13 @@ func captchaError(err error) (int, string) {
 }
 
 func setSessionCookie(c *gin.Context, value string, maxAge int, secure bool) {
-	c.SetCookie(sessionCookie, value, maxAge, "/", "", secure, true)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		Secure:   secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }

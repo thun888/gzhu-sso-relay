@@ -85,6 +85,7 @@ export function ClientDetail({
   const [selectedScopes, setSelectedScopes] = useState(client.scopes)
   const [bindings, setBindings] = useState(client.required_bindings)
   const [isPrivate, setIsPrivate] = useState(client.is_private)
+  const [enabled, setEnabled] = useState(client.enabled)
   const [groupIds, setGroupIds] = useState<number[]>(client.group_ids)
   const [members, setMembers] = useState(client.users)
 
@@ -108,6 +109,7 @@ export function ClientDetail({
     setSelectedScopes(client.scopes)
     setBindings(client.required_bindings)
     setIsPrivate(client.is_private)
+    setEnabled(client.enabled)
     setGroupIds(client.group_ids)
     setMembers(client.users)
   }
@@ -144,6 +146,7 @@ export function ClientDetail({
     !sameSet(selectedScopes, client.scopes) ||
     !sameSet(bindings, client.required_bindings) ||
     isPrivate !== client.is_private ||
+    enabled !== client.enabled ||
     !sameSet(groupIds, client.group_ids) ||
     !sameSet(
       members.map((m) => m.id),
@@ -160,6 +163,7 @@ export function ClientDetail({
       if (redirects.join("\n") !== client.redirect_urls.join("\n")) body.redirect_urls = redirects
       if (!sameSet(bindings, client.required_bindings)) body.required_bindings = bindings
       if (isPrivate !== client.is_private) body.is_private = isPrivate
+      if (enabled !== client.enabled) body.enabled = enabled
       if (Object.keys(body).length > 0) {
         await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}`, {
           method: "PATCH",
@@ -370,6 +374,16 @@ export function ClientDetail({
           </div>
         </Section>
 
+        <Section
+          title="状态"
+          description="停用后应用无法发起授权，也无法用授权码换取令牌，配置与授权记录保留"
+        >
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={enabled} label="正常启用" onClick={() => setEnabled(true)} />
+            <Chip active={!enabled} label="已停用" onClick={() => setEnabled(false)} />
+          </div>
+        </Section>
+
         <Section title="Client ID" description="公开标识，写在授权请求的 URL 里，不是密钥">
           <div className="flex items-center gap-2">
             <code className="rounded-md border border-border bg-secondary/50 px-2.5 py-1.5 font-mono text-[12.5px] text-foreground">
@@ -411,7 +425,10 @@ export function ClientDetail({
           )}
         </Section>
 
-        <Section title="回调地址" description="授权完成后跳回的地址，必须完全匹配">
+        <Section
+          title="回调地址"
+          description="路径与查询串必须一致；127.0.0.1 与 localhost 忽略端口，桌面应用可填自定义 scheme"
+        >
           <div className="space-y-2">
             {redirects.map((item) => (
               <div

@@ -35,6 +35,7 @@
 | 存储 | Redis，键前缀 `relay:session:` |
 
 退出登录会删除 Redis 中的会话并清除 cookie。重新登录会生成新令牌，旧令牌不会自动失效。
+管理员禁用某个账号时，relay 会立即清空该账号的全部会话，无需等待 12 小时。
 
 ### 失败提示
 
@@ -102,7 +103,7 @@
 7. 校验 PKCE，公开客户端必须携带。
 8. 签发授权码并跳回 `redirect_uri`。
 
-用户同意一次后，授权记录长期有效。应用之后申请新的 scope 时，会再次进入确认页。用户组与强制绑定在每次授权时重新检查。
+用户同意一次后，授权记录长期有效。应用之后申请新的 scope 时，会再次进入确认页。用户组与强制绑定在每次授权时重新检查。在确认页点「取消」会带 `error=access_denied` 回跳应用，待确认的授权请求随即作废。
 
 ## 管理后台
 
@@ -114,7 +115,8 @@
 - 只展示已经登录过一次的账号。
 - 可切换管理员身份，可禁用或启用账号。
 
-禁用后，该账号无法再次登录，新的授权请求会被拒绝。已建立的会话在剩余有效期内（最长 12 小时）仍可访问用户中心；已经签发的 access token 在 1 小时有效期内仍可能被下游离线校验通过。
+禁用后，该账号无法再次登录，新的授权请求会被拒绝，已建立的会话会被立即清空。
+已经签发的 access token 在 1 小时有效期内仍可能被下游离线校验通过，在线校验 userinfo 会立即失效。
 
 ### 用户组
 
@@ -132,7 +134,8 @@
 | --- | --- |
 | 新建 | 需要 `client_id`、名称、回调地址；`client_id` 只允许字母、数字、下划线与连字符，最长 64 |
 | 权限 | 勾选允许申请的 scope、强制绑定源、限定用户组，点击即时生效 |
-| 删除 | 同时删除 scope 与用户组关联；授权记录与已签发令牌不会撤回 |
+| 停用 | 停用后应用无法发起授权，也无法用授权码换取令牌，配置与授权记录保留，可随时恢复 |
+| 删除 | 同时删除 scope、用户组、用户白名单、授权记录与登录通知；已签发令牌在有效期内仍可离线校验通过 |
 | 客户端密钥 | 创建时显示一次，服务端只保存哈希；没有轮换接口，需要更换时删除重建 |
 
 公开客户端不校验密钥，必须使用 PKCE。机密客户端支持 `client_secret_basic` 与 `client_secret_post`。
@@ -215,6 +218,7 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | GET | `/api/me` | 当前用户、用户组与绑定状态 |
 | GET | `/api/consent?req=` | 查询待确认授权 |
 | POST | `/api/consent` | 同意授权，返回继续地址 |
+| POST | `/api/consent/deny` | 拒绝授权，返回带 `error=access_denied` 的回跳地址 |
 | GET | `/api/bindings/<provider>/start?next=` | 发起绑定 |
 | DELETE | `/api/bindings/<provider>` | 解除绑定 |
 | GET | `/bindings/<provider>/callback` | 绑定源回调 |
@@ -235,7 +239,7 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | GET | `/api/admin/bindings` | 已配置的绑定源 |
 | GET | `/api/admin/clients` | 应用列表 |
 | POST | `/api/admin/clients` | 新建应用 |
-| PATCH | `/api/admin/clients/<id>` | 修改名称、回调、强制绑定、客户端类型 |
+| PATCH | `/api/admin/clients/<id>` | 修改名称、回调、强制绑定、启用状态、客户端类型 |
 | DELETE | `/api/admin/clients/<id>` | 删除应用 |
 | PUT | `/api/admin/clients/<id>/scopes` | 整体替换允许的 scope |
 | PUT | `/api/admin/clients/<id>/groups` | 整体替换限定用户组 |
@@ -281,6 +285,6 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | 授权返回 `invalid_request` | `redirect_uri` 不在允许列表，或公开客户端未带 PKCE |
 | 授权返回 `access_denied` | 用户不在应用限定的用户组内 |
 | 绑定回调 `bind_error=exchange` | 回调地址与平台登记值不一致，或授权码已过期 |
-| 验证码不显示 | 浏览器无法访问 `static.geetest.com`，或 `captcha.enabled` 为 false |
+| 验证码不显示 | 浏览器无法访问 `static.geetest.com`，或 `captcha.enabled` 为 false；也检查响应头 `Content-Security-Policy` 是否放行了极验域名 |
 | 管理后台 403 | 当前账号不是管理员，用 `relayctl user promote` 提升 |
 | 下游校验令牌失败 | 检查 issuer 是否为最新 `base_url`，JWKS 是否指向本服务，签名密钥是否被更换 |

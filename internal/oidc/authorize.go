@@ -19,7 +19,7 @@ func (p *Provider) Authorize(c *gin.Context) {
 	redirectURI := query.Get("redirect_uri")
 
 	client, err := p.clients.ByClientID(ctx, clientID)
-	if err != nil {
+	if err != nil || !client.Enabled {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unauthorized_client", "error_description": "未知的 client_id"})
 		return
 	}
@@ -149,23 +149,51 @@ func (p *Provider) Authorize(c *gin.Context) {
 	c.Redirect(http.StatusFound, target.String())
 }
 
-func redirectAllowed(client *model.OAuthClient, redirectURI string) bool {
-	if redirectURI == "" {
+// redirectAllowed 按组件比对回调地址：scheme 与 host 不区分大小写，路径与查询串必须完全一致。
+// loopback 地址忽略端口，桌面客户端与原生应用每次监听的端口都不固定。
+func redirectAllowed(client *model.OAuthClient, raw string) bool {
+	target, err := url.Parse(raw)
+	if err != nil || target.Scheme == "" {
 		return false
 	}
 	for _, allowed := range client.RedirectURLs {
-		if strings.EqualFold(allowed, redirectURI) {
+		if redirectMatches(allowed, target) {
 			return true
 		}
 	}
 	return false
 }
 
-func redirectError(c *gin.Context, redirectURI, state, code, description string) {
+func redirectMatches(allowed string, target *url.URL) bool {
+	ref, err := url.Parse(allowed)
+	if err != nil || ref.Scheme == "" {
+		return false
+	}
+	if !strings.EqualFold(ref.Scheme, target.Scheme) || !strings.EqualFold(ref.Hostname(), target.Hostname()) {
+		return false
+	}
+	if ref.EscapedPath() != target.EscapedPath() || ref.RawQuery != target.RawQuery {
+		return false
+	}
+	if isLoopbackHost(ref.Hostname()) && isLoopbackHost(target.Hostname()) {
+		return true
+	}
+	return ref.Port() == target.Port()
+}
+
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "127.0.0.1", "::1", "localhost":
+		return true
+	}
+	return false
+}
+
+// ErrorRedirect 把错误参数附加到回调地址，state 原样回传。
+func ErrorRedirect(redirectURI, state, code, description string) (string, error) {
 	target, err := url.Parse(redirectURI)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": code, "error_description": description})
-		return
+		return "", err
 	}
 	params := target.Query()
 	params.Set("error", code)
@@ -174,5 +202,14 @@ func redirectError(c *gin.Context, redirectURI, state, code, description string)
 		params.Set("state", state)
 	}
 	target.RawQuery = params.Encode()
-	c.Redirect(http.StatusFound, target.String())
+	return target.String(), nil
+}
+
+func redirectError(c *gin.Context, redirectURI, state, code, description string) {
+	target, err := ErrorRedirect(redirectURI, state, code, description)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": code, "error_description": description})
+		return
+	}
+	c.Redirect(http.StatusFound, target)
 }

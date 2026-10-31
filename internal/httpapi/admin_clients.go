@@ -38,6 +38,7 @@ type clientView struct {
 	Description      string            `json:"description"`
 	IsPublic         bool              `json:"is_public"`
 	IsPrivate        bool              `json:"is_private"`
+	Enabled          bool              `json:"enabled"`
 	RedirectURLs     []string          `json:"redirect_urls"`
 	RequiredBindings []string          `json:"required_bindings"`
 	Scopes           []string          `json:"scopes"`
@@ -91,6 +92,7 @@ func (h *AdminClients) List(c *gin.Context) {
 			Description:      client.Description,
 			IsPublic:         client.IsPublic,
 			IsPrivate:        client.IsPrivate,
+			Enabled:          client.Enabled,
 			RedirectURLs:     redirects,
 			RequiredBindings: bindings,
 			Scopes:           scopes,
@@ -177,6 +179,7 @@ func (h *AdminClients) Create(c *gin.Context) {
 		RequiredBindings: bindings,
 		IsPublic:         req.IsPublic,
 		IsPrivate:        req.IsPrivate,
+		Enabled:          true,
 	}
 	if err := h.clients.Create(ctx, &client); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "创建应用失败，client_id 可能已存在"})
@@ -201,6 +204,7 @@ type clientPatch struct {
 	RequiredBindings *[]string `json:"required_bindings"`
 	IsPublic         *bool     `json:"is_public"`
 	IsPrivate        *bool     `json:"is_private"`
+	Enabled          *bool     `json:"enabled"`
 }
 
 func (h *AdminClients) Patch(c *gin.Context) {
@@ -245,6 +249,9 @@ func (h *AdminClients) Patch(c *gin.Context) {
 	}
 	if req.IsPrivate != nil {
 		fields["is_private"] = *req.IsPrivate
+	}
+	if req.Enabled != nil {
+		fields["enabled"] = *req.Enabled
 	}
 	if len(fields) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "没有需要更新的字段"})
@@ -401,12 +408,27 @@ func (h *AdminClients) Scopes(c *gin.Context) {
 
 func (h *AdminClients) checkRedirects(urls []string) error {
 	for _, raw := range urls {
-		parsed, err := url.Parse(raw)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		if !validRedirect(raw) {
 			return errInvalidRedirect
 		}
 	}
 	return nil
+}
+
+// validRedirect 接受 http/https 绝对地址，也接受桌面与移动端使用的自定义 scheme。
+// 带 fragment 的地址会把参数截断在客户端，一律拒绝。
+func validRedirect(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Fragment != "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return parsed.Host != ""
+	case "javascript", "data", "file", "about", "blob", "vbscript":
+		return false
+	}
+	return parsed.Host != "" || parsed.Path != ""
 }
 
 func (h *AdminClients) checkScopes(c *gin.Context, names []string) error {
@@ -451,7 +473,7 @@ type adminError string
 func (e adminError) Error() string { return string(e) }
 
 const (
-	errInvalidRedirect adminError = "回调地址必须是完整的 http 或 https 地址"
+	errInvalidRedirect adminError = "回调地址必须是完整地址，支持 http、https 与自定义 scheme"
 	errInvalidScope    adminError = "存在未定义的 scope"
 	errInvalidBinding  adminError = "存在未配置的绑定源"
 )

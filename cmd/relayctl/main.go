@@ -97,6 +97,7 @@ func createClient(ctx context.Context, db *gorm.DB, args []string) {
 		Name:         *name,
 		RedirectURLs: splitList(*redirects),
 		IsPublic:     *public,
+		Enabled:      true,
 	}
 	if err := db.WithContext(ctx).Create(&client).Error; err != nil {
 		die(fmt.Errorf("创建应用失败: %w", err))
@@ -144,11 +145,16 @@ func deleteClient(ctx context.Context, db *gorm.DB, args []string) {
 	}
 
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("client_id = ?", *id).Delete(&model.ClientAllowedScope{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("client_id = ?", *id).Delete(&model.GroupOAuthClient{}).Error; err != nil {
-			return err
+		for _, target := range []any{
+			&model.ClientAllowedScope{},
+			&model.GroupOAuthClient{},
+			&model.ClientUserGrant{},
+			&model.Consent{},
+			&model.LoginNotice{},
+		} {
+			if err := tx.Where("client_id = ?", *id).Delete(target).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Where("client_id = ?", *id).Delete(&model.OAuthClient{}).Error
 	})

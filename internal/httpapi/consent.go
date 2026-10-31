@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 
@@ -112,6 +114,56 @@ func (h *Consent) Approve(c *gin.Context) {
 	_ = h.pending.Delete(ctx, req.Req)
 
 	c.JSON(http.StatusOK, gin.H{"continue": pending.AuthorizeURL})
+}
+
+// Deny 取消授权时把 access_denied 回传给应用，否则应用只能一直等到超时。
+func (h *Consent) Deny(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var req struct {
+		Req string `json:"req" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式不正确"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	pending, err := h.pending.Load(ctx, req.Req)
+	if err != nil {
+		c.JSON(http.StatusGone, gin.H{"error": "授权请求已过期，请重新发起"})
+		return
+	}
+	if pending.UserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "授权请求不属于当前用户"})
+		return
+	}
+
+	target, err := deniedRedirect(pending.AuthorizeURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "授权请求缺少回调地址"})
+		return
+	}
+	_ = h.pending.Delete(ctx, req.Req)
+
+	c.JSON(http.StatusOK, gin.H{"continue": target})
+}
+
+func deniedRedirect(authorizeURL string) (string, error) {
+	parsed, err := url.Parse(authorizeURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	redirectURI := query.Get("redirect_uri")
+	if redirectURI == "" {
+		return "", errors.New("consent: 授权请求缺少 redirect_uri")
+	}
+	return oidc.ErrorRedirect(redirectURI, query.Get("state"), "access_denied", "用户拒绝授权")
 }
 
 // currentUser 取 RequireUser 中间件写入的登录用户。

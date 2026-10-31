@@ -1,9 +1,11 @@
 package oidc
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,18 +26,33 @@ func (p *Provider) Token(c *gin.Context) {
 	}
 	form := c.Request.PostForm
 
+	if p.limiter != nil {
+		blocked, err := p.limiter.Blocked(ctx, c.ClientIP())
+		if err != nil {
+			tokenError(c, http.StatusInternalServerError, "server_error", "限流状态不可用")
+			return
+		}
+		if blocked {
+			tokenError(c, http.StatusTooManyRequests, "too_many_requests", "失败次数过多，请稍后再试")
+			return
+		}
+	}
+
 	clientID, secret, ok := clientCredentials(c, form)
 	if !ok || clientID == "" {
+		p.countFailure(ctx, c)
 		tokenError(c, http.StatusUnauthorized, "invalid_client", "缺少客户端凭据")
 		return
 	}
 
 	client, err := p.clients.ByClientID(ctx, clientID)
-	if err != nil {
+	if err != nil || !client.Enabled {
+		p.countFailure(ctx, c)
 		tokenError(c, http.StatusUnauthorized, "invalid_client", "未知的客户端")
 		return
 	}
 	if !client.IsPublic && !secretMatches(client, secret) {
+		p.countFailure(ctx, c)
 		tokenError(c, http.StatusUnauthorized, "invalid_client", "客户端密钥不正确")
 		return
 	}
@@ -45,7 +62,7 @@ func (p *Provider) Token(c *gin.Context) {
 		return
 	}
 
-	grant, err := p.codes.Consume(ctx, form.Get("code"))
+	grant, err := p.codes.Peek(ctx, form.Get("code"))
 	if err != nil {
 		tokenError(c, http.StatusBadRequest, "invalid_grant", "授权码无效或已过期")
 		return
@@ -64,6 +81,16 @@ func (p *Provider) Token(c *gin.Context) {
 	}
 	if !verifyPKCE(grant, form.Get("code_verifier")) {
 		tokenError(c, http.StatusBadRequest, "invalid_grant", "PKCE 校验失败")
+		return
+	}
+
+	consumed, err := p.codes.Consume(ctx, form.Get("code"))
+	if err != nil {
+		tokenError(c, http.StatusInternalServerError, "server_error", "授权码状态不可用")
+		return
+	}
+	if !consumed {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "授权码已被使用")
 		return
 	}
 
@@ -160,6 +187,15 @@ func verifyPKCE(grant *Grant, verifier string) bool {
 func tokenError(c *gin.Context, status int, code, description string) {
 	c.Header("Cache-Control", "no-store")
 	c.JSON(status, gin.H{"error": code, "error_description": description})
+}
+
+func (p *Provider) countFailure(ctx context.Context, c *gin.Context) {
+	if p.limiter == nil {
+		return
+	}
+	if err := p.limiter.Hit(ctx, c.ClientIP()); err != nil {
+		log.Printf("oidc: 记录令牌端点失败次数: %v", err)
+	}
 }
 
 func nowUnix() int64 {

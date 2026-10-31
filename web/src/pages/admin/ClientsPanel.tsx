@@ -147,6 +147,12 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
                 )}
               </button>
 
+              {!client.enabled && (
+                <span className="shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 text-[11.5px] text-destructive">
+                  已停用
+                </span>
+              )}
+
               <span
                 className={cn(
                   "shrink-0 rounded px-1.5 py-0.5 text-[11.5px]",
