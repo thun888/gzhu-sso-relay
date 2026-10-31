@@ -191,14 +191,20 @@ func splitScope(raw string) []string {
 }
 
 func scopeSubset(requested, allowed []string) bool {
+	return len(missingScopes(requested, allowed)) == 0
+}
+
+// missingScopes 按请求顺序列出 allowed 里没有的 scope，便于把出错的具体 scope 回给调用方。
+func missingScopes(requested, allowed []string) []string {
 	set := make(map[string]struct{}, len(allowed))
 	for _, s := range allowed {
 		set[s] = struct{}{}
 	}
+	var missing []string
 	for _, s := range requested {
 		if _, ok := set[s]; !ok {
-			return false
+			missing = append(missing, s)
 		}
 	}
-	return true
+	return missing
 }

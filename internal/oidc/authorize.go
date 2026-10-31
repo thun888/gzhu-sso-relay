@@ -44,8 +44,8 @@ func (p *Provider) Authorize(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
-	if !scopeSubset(scopes, allowed) {
-		redirectError(c, redirectURI, state, "invalid_scope", "应用未被允许申请该 scope")
+	if missing := missingScopes(scopes, allowed); len(missing) > 0 {
+		redirectError(c, redirectURI, state, "invalid_scope", "应用未被允许申请该 scope："+strings.Join(missing, " "))
 		return
 	}
 
