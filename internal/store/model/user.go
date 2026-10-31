@@ -21,7 +21,9 @@ type User struct {
 	ID           string `gorm:"primaryKey;size:32"`
 	Name         string `gorm:"size:64;not null"`
 	PasswordHash string `gorm:"size:255;not null"`
-	Email        string `gorm:"size:128;not null;index"`
+	// UpstreamStale 为 true 表示上次带本地哈希对应密码回访上游被拒，本地命中需同步复核后放行。
+	UpstreamStale bool `gorm:"not null;default:false"`
+	Email         string `gorm:"size:128;not null;index"`
 	Type         int16  `gorm:"not null;default:0"`
 	Status       int16  `gorm:"not null;default:0"`
 	LastLoginAt  *time.Time

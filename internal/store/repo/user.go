@@ -40,12 +40,23 @@ func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 	return nil
 }
 
+// UpdatePasswordHash 只在上游验证通过后调用，一并清除过期标记。
 func (r *UserRepo) UpdatePasswordHash(ctx context.Context, id, hash string) error {
 	err := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", id).
-		Update("password_hash", hash).Error
+		Updates(map[string]any{"password_hash": hash, "upstream_stale": false}).Error
 	if err != nil {
 		return fmt.Errorf("repo: 更新用户 %s 密码哈希: %w", id, err)
+	}
+	return nil
+}
+
+func (r *UserRepo) SetUpstreamStale(ctx context.Context, id string, stale bool) error {
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", id).
+		Update("upstream_stale", stale).Error
+	if err != nil {
+		return fmt.Errorf("repo: 更新用户 %s 上游验证标记: %w", id, err)
 	}
 	return nil
 }

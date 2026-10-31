@@ -84,6 +84,9 @@ func (s *Service) Login(ctx context.Context, id, password string) (*Result, erro
 	}
 
 	if ok, verr := cryptox.VerifyPassword(user.PasswordHash, password); verr == nil && ok {
+		if user.UpstreamStale {
+			return s.reverifyUpstream(ctx, user, password)
+		}
 		result, err := s.issue(ctx, user)
 		if err == nil && s.shouldRefresh() {
 			s.refreshUpstream(user.ID, password)
@@ -162,13 +165,29 @@ func (s *Service) provision(ctx context.Context, id, password string) (*Result, 
 	return s.issue(ctx, user)
 }
 
+// reverifyUpstream 处理本地命中但上次上游验证被拒的登录：同步复核通过才放行，
+// 复核失败说明本地哈希已过期，保留标记等待下次复核。
+func (s *Service) reverifyUpstream(ctx context.Context, user *model.User, password string) (*Result, error) {
+	profile, err := s.authenticateUpstream(ctx, user.ID, password)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.users.SetUpstreamStale(ctx, user.ID, false); err != nil {
+		return nil, err
+	}
+	if err := s.saveUpstreamProfile(ctx, user.ID, profile); err != nil {
+		return nil, err
+	}
+	return s.issue(ctx, user)
+}
+
 // shouldRefresh 决定这次登录是否顺带刷新上游资料。本地哈希能命中就不会访问上游，
 // 完全靠它同步会让学院、身份这类信息一直停在首次登录时的值。
 func (s *Service) shouldRefresh() bool {
 	return s.upstream.RefreshRate > 0 && rand.Float64() < s.upstream.RefreshRate
 }
 
-// refreshUpstream 在响应返回后再访问上游，失败只记日志，不影响这次登录。
+// refreshUpstream 在响应返回后再访问上游，不影响这次登录；上游明确拒绝时标记本地密码过期。
 func (s *Service) refreshUpstream(userID, password string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), s.upstream.Timeout)
@@ -176,12 +195,20 @@ func (s *Service) refreshUpstream(userID, password string) {
 
 		profile, err := s.fetchUpstream(ctx, userID, password)
 		if err != nil {
+			if errors.Is(err, ErrInvalidCredentials) {
+				if markErr := s.users.SetUpstreamStale(ctx, userID, true); markErr != nil {
+					log.Printf("标记本地密码过期失败 id=%s: %v", userID, markErr)
+				}
+				return
+			}
 			log.Printf("刷新上游资料失败 id=%s: %v", userID, err)
 			return
 		}
 		if err := s.saveUpstreamProfile(ctx, userID, profile); err != nil {
 			log.Printf("刷新上游资料失败 id=%s: %v", userID, err)
+			return
 		}
+		_ = s.users.SetUpstreamStale(ctx, userID, false)
 	}()
 }
 
