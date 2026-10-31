@@ -91,8 +91,8 @@ export function Chip({
       className={cn(
         "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
         active
-          ? "border-primary/40 bg-primary/10 text-primary"
-          : "border-border text-muted-foreground hover:text-foreground",
+          ? "cursor-pointer border-primary/40 bg-primary/10 text-primary"
+          : "cursor-pointer border-border text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
       )}
     >
       {label}
