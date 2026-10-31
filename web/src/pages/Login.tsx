@@ -202,12 +202,6 @@ export default function Login({ siteTitle, panel, captcha }: Props) {
                   </Button>
                 </div>
 
-                {needCaptcha && (
-                  <p className="mt-2.5 text-[12.5px] leading-[18px] text-muted-foreground">
-                    该网络近期有登录失败记录，登录前需完成验证
-                  </p>
-                )}
-
                 <p
                   className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
                   role="alert"

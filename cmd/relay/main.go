@@ -96,7 +96,7 @@ func run() error {
 	if cfg.Captcha.Enabled {
 		geetest = captcha.NewGeetest(cfg.Captcha.CaptchaID, cfg.Captcha.CaptchaKey)
 	}
-	captchaPolicy := httpapi.NewCaptchaPolicy(geetest, auth.NewCaptchaGuard(rdb, cfg.Captcha.FailWindow.Std()))
+	captchaPolicy := httpapi.NewCaptchaPolicy(geetest, auth.NewCaptchaGuard(rdb, cfg.Captcha.FailWindow.Std()), cfg.Captcha.Always)
 
 	authHandler := httpapi.NewAuth(authService, captchaPolicy, secure)
 

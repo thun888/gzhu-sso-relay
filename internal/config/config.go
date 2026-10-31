@@ -22,9 +22,11 @@ type Config struct {
 	Bindings  Bindings `yaml:"bindings"`
 }
 
-// Captcha 极验行为验证。开启后某个 IP 登录失败一次，fail_window 内该 IP 登录都需先过验证码。
+// Captcha 极验行为验证。fail_window 内有失败记录时该 IP 登录需先过验证码，
+// always 为 true 时每次登录都要验证，且不再记录失败次数。
 type Captcha struct {
 	Enabled    bool     `yaml:"enabled"`
+	Always     bool     `yaml:"always"`
 	CaptchaID  string   `yaml:"captcha_id"`
 	CaptchaKey string   `yaml:"captcha_key"`
 	FailWindow Duration `yaml:"fail_window"`

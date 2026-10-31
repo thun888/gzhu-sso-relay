@@ -10,12 +10,13 @@ import (
 
 // CaptchaPolicy 把极验二次校验与按 IP 的失败标记串在一起，site 为空表示未启用。
 type CaptchaPolicy struct {
-	site  *captcha.Geetest
-	guard *auth.CaptchaGuard
+	site   *captcha.Geetest
+	guard  *auth.CaptchaGuard
+	always bool
 }
 
-func NewCaptchaPolicy(site *captcha.Geetest, guard *auth.CaptchaGuard) *CaptchaPolicy {
-	return &CaptchaPolicy{site: site, guard: guard}
+func NewCaptchaPolicy(site *captcha.Geetest, guard *auth.CaptchaGuard, always bool) *CaptchaPolicy {
+	return &CaptchaPolicy{site: site, guard: guard, always: always}
 }
 
 func (p *CaptchaPolicy) Enabled() bool {
@@ -34,6 +35,9 @@ func (p *CaptchaPolicy) Required(ctx context.Context, ip string) bool {
 	if !p.Enabled() {
 		return false
 	}
+	if p.always {
+		return true
+	}
 	required, err := p.guard.Required(ctx, ip)
 	if err != nil {
 		log.Printf("验证码标记读取失败 ip=%s: %v", ip, err)
@@ -47,7 +51,7 @@ func (p *CaptchaPolicy) Verify(ctx context.Context, answer captcha.Answer) error
 }
 
 func (p *CaptchaPolicy) Flag(ctx context.Context, ip string) {
-	if !p.Enabled() {
+	if !p.Enabled() || p.always {
 		return
 	}
 	if err := p.guard.Flag(ctx, ip); err != nil {

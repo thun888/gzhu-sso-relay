@@ -47,10 +47,13 @@ upstream:
   portal_base_url: "https://newmy.gzhu.edu.cn"
   timeout: 30s
 
-# 极验行为验证。开启后某个 IP 登录失败一次，fail_window 内该 IP 的登录都要先过验证码；
+# 极验行为验证。默认只在某个 IP 登录失败后，fail_window 内要求验证码；
 # 期间任意一次登录成功即解除，直到下次失败重新要求验证
 captcha:
   enabled: false
+  # 始终要求验证：每次登录都要过验证码，且不再记录失败次数。
+  # 开启后 fail_window 不再生效，适合对外网完全开放的部署
+  always: false
   # 极验后台的验证 ID 与私钥，私钥只在服务端使用
   captcha_id: ""
   captcha_key: ""
