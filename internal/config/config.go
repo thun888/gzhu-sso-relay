@@ -46,6 +46,7 @@ type Server struct {
 	SiteTitle      string       `yaml:"site_title"`
 	EmailDomains   EmailDomains `yaml:"email_domains"`
 	SigningKeyPath string       `yaml:"signing_key_path"`
+	LogoDir        string       `yaml:"logo_dir"`
 	TrustedProxies []string     `yaml:"trusted_proxies"`
 	LoginPanel     LoginPanel   `yaml:"login_panel"`
 	LoginFooter    LoginFooter  `yaml:"login_footer"`
@@ -130,6 +131,7 @@ func defaults() *Config {
 			AccountURL:     "/",
 			SiteTitle:      "广州大学",
 			SigningKeyPath: "./data/signing_key.pem",
+			LogoDir:        "./data/logos",
 			TrustedProxies: []string{"127.0.0.1", "::1"},
 			LoginPanel: LoginPanel{
 				Enabled: true,
@@ -158,6 +160,9 @@ func (c *Config) normalize() {
 	c.Server.BaseURL = strings.TrimSuffix(c.Server.BaseURL, "/")
 	if c.Server.LoginURL == "" {
 		c.Server.LoginURL = "/login"
+	}
+	if c.Server.LogoDir == "" {
+		c.Server.LogoDir = "./data/logos"
 	}
 }
 

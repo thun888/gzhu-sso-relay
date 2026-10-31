@@ -20,6 +20,8 @@ server:
     "": "gzhu.edu.cn"
   # 首次启动自动生成 RS256 签名密钥，需持久化并纳入备份
   signing_key_path: "./data/signing_key.pem"
+  # 应用图标目录，按 client_id 命名，需与数据库一起备份
+  logo_dir: "./data/logos"
   # 只有来自这些地址的请求才采信 X-Forwarded-For，用于还原真实来访 IP。
   # 反向代理不在本机时把代理地址加进来；写成 [] 表示一律使用连接地址
   trusted_proxies:

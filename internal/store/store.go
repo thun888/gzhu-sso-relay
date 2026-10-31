@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
+	"github.com/thun888/gzhu-sso-relay/internal/logo"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
 
@@ -32,7 +33,7 @@ func Open(dsn string) (*gorm.DB, error) {
 	return db, nil
 }
 
-func Migrate(db *gorm.DB) error {
+func Migrate(db *gorm.DB, logos *logo.Store) error {
 	hadPrivate := db.Migrator().HasColumn(&model.OAuthClient{}, "is_private")
 
 	err := db.AutoMigrate(
@@ -57,6 +58,33 @@ func Migrate(db *gorm.DB) error {
 		if err := backfillClientPrivate(db); err != nil {
 			return err
 		}
+	}
+	if err := migrateClientLogo(db, logos); err != nil {
+		return err
+	}
+	return nil
+}
+
+// 应用图标早期直接存在 bytea 列里，现在改为落盘，这里把存量搬出去再删列。
+func migrateClientLogo(db *gorm.DB, logos *logo.Store) error {
+	if !db.Migrator().HasColumn(&model.OAuthClient{}, "logo") {
+		return nil
+	}
+
+	var rows []struct {
+		ClientID string
+		Data     []byte
+	}
+	if err := db.Raw("SELECT client_id, logo AS data FROM oauth_clients WHERE logo IS NOT NULL").Scan(&rows).Error; err != nil {
+		return fmt.Errorf("store: 读取 oauth_clients.logo: %w", err)
+	}
+	for _, row := range rows {
+		if err := logos.Save(row.ClientID, row.Data); err != nil {
+			return fmt.Errorf("store: 迁移应用 %s 的图标: %w", row.ClientID, err)
+		}
+	}
+	if err := db.Migrator().DropColumn(&model.OAuthClient{}, "logo"); err != nil {
+		return fmt.Errorf("store: 删除 oauth_clients.logo: %w", err)
 	}
 	return nil
 }

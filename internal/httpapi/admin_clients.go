@@ -10,6 +10,7 @@ import (
 
 	"github.com/thun888/gzhu-sso-relay/internal/binding"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
+	"github.com/thun888/gzhu-sso-relay/internal/logo"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
 )
@@ -20,10 +21,11 @@ type AdminClients struct {
 	groups   *repo.GroupRepo
 	users    *repo.UserRepo
 	registry *binding.Registry
+	logos    *logo.Store
 }
 
-func NewAdminClients(clients *repo.ClientRepo, scopes *repo.ScopeRepo, groups *repo.GroupRepo, users *repo.UserRepo, registry *binding.Registry) *AdminClients {
-	return &AdminClients{clients: clients, scopes: scopes, groups: groups, users: users, registry: registry}
+func NewAdminClients(clients *repo.ClientRepo, scopes *repo.ScopeRepo, groups *repo.GroupRepo, users *repo.UserRepo, registry *binding.Registry, logos *logo.Store) *AdminClients {
+	return &AdminClients{clients: clients, scopes: scopes, groups: groups, users: users, registry: registry, logos: logos}
 }
 
 const maxLogoSize = 1 << 20
@@ -262,8 +264,13 @@ func (h *AdminClients) RotateSecret(c *gin.Context) {
 }
 
 func (h *AdminClients) Delete(c *gin.Context) {
-	if err := h.clients.Delete(c.Request.Context(), c.Param("id")); err != nil {
+	id := c.Param("id")
+	if err := h.clients.Delete(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除应用失败"})
+		return
+	}
+	if err := h.logos.Remove(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除图片失败"})
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -439,12 +446,18 @@ func (h *AdminClients) Bindings(c *gin.Context) {
 
 func (h *AdminClients) Logo(c *gin.Context) {
 	client, err := h.clients.ByClientID(c.Request.Context(), c.Param("id"))
-	if err != nil || len(client.Logo) == 0 {
+	if err != nil || client.LogoType == "" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	data, err := h.logos.Load(client.ClientID)
+	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
 	c.Header("Cache-Control", "public, max-age=300")
-	c.Data(http.StatusOK, client.LogoType, client.Logo)
+	c.Data(http.StatusOK, client.LogoType, data)
 }
 
 func (h *AdminClients) UploadLogo(c *gin.Context) {
@@ -483,7 +496,11 @@ func (h *AdminClients) UploadLogo(c *gin.Context) {
 		return
 	}
 
-	if err := h.clients.Update(c.Request.Context(), id, map[string]any{"logo": data, "logo_type": contentType}); err != nil {
+	if err := h.logos.Save(id, data); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片失败"})
+		return
+	}
+	if err := h.clients.Update(c.Request.Context(), id, map[string]any{"logo_type": contentType}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片失败"})
 		return
 	}
@@ -491,7 +508,12 @@ func (h *AdminClients) UploadLogo(c *gin.Context) {
 }
 
 func (h *AdminClients) DeleteLogo(c *gin.Context) {
-	if err := h.clients.Update(c.Request.Context(), c.Param("id"), map[string]any{"logo": nil, "logo_type": ""}); err != nil {
+	id := c.Param("id")
+	if err := h.clients.Update(c.Request.Context(), id, map[string]any{"logo_type": ""}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "移除图片失败"})
+		return
+	}
+	if err := h.logos.Remove(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "移除图片失败"})
 		return
 	}

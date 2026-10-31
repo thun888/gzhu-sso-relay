@@ -13,6 +13,7 @@ import (
 
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
+	"github.com/thun888/gzhu-sso-relay/internal/logo"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
@@ -32,7 +33,7 @@ func main() {
 	if err != nil {
 		die(err)
 	}
-	if err := store.Migrate(db); err != nil {
+	if err := store.Migrate(db, logo.New(cfg.Server.LogoDir)); err != nil {
 		die(err)
 	}
 	if err := store.Seed(db); err != nil {

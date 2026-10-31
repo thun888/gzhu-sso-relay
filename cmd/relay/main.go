@@ -23,6 +23,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
+	"github.com/thun888/gzhu-sso-relay/internal/logo"
 	"github.com/thun888/gzhu-sso-relay/internal/oidc"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
@@ -57,7 +58,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := store.Migrate(db); err != nil {
+	logos := logo.New(cfg.Server.LogoDir)
+	if err := store.Migrate(db, logos); err != nil {
 		return err
 	}
 	if err := store.Seed(db); err != nil {
@@ -150,7 +152,7 @@ func run() error {
 	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
 	adminHandler := httpapi.NewAdmin(users, groups)
-	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry)
+	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry, logos)
 	router.GET("/api/clients/:id/logo", adminClients.Logo)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())
 	admin.GET("/users", adminHandler.ListUsers)
