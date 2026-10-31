@@ -194,7 +194,8 @@ const placeholderHash = "!preimport"
 func importUsers(ctx context.Context, db *gorm.DB, cfg *config.Config, args []string) {
 	fs := flag.NewFlagSet("user import", flag.ExitOnError)
 	groupCode := fs.String("group", "", "导入后加入的用户组 code")
-	_ = fs.Parse(args)
+	// flag 包遇到首个位置参数就停止解析，先重排保证 flag 写在文件名后面也能生效
+	_ = fs.Parse(flagsFirst(fs, args))
 	if fs.NArg() < 1 {
 		die(fmt.Errorf("需要提供用户列表文件路径，- 表示标准输入"))
 	}
@@ -312,6 +313,32 @@ func importUsers(ctx context.Context, db *gorm.DB, cfg *config.Config, args []st
 	if len(noDomain) > 0 {
 		fmt.Printf("无邮箱后缀: %s\n", strings.Join(noDomain, ", "))
 	}
+}
+
+// flagsFirst 把 flag 挪到位置参数之前，未知 flag 原样保留交给 Parse 报错。
+func flagsFirst(fs *flag.FlagSet, args []string) []string {
+	var flags, rest []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
+			rest = append(rest, arg)
+			continue
+		}
+		name := strings.TrimLeft(arg, "-")
+		takesValue := false
+		if j := strings.IndexByte(name, '='); j >= 0 {
+			name = name[:j]
+		} else if f := fs.Lookup(name); f != nil {
+			_, isBool := f.Value.(interface{ IsBoolFlag() bool })
+			takesValue = !isBool && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-")
+		}
+		flags = append(flags, arg)
+		if takesValue {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, rest...)
 }
 
 // splitConfigFlag 把 -config 从参数里摘出来，其余参数保持原有顺序。
