@@ -111,11 +111,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	bindingACLs := repo.NewBindingACLRepo(db)
 	consents := repo.NewConsentRepo(db)
 	scopeRepo := repo.NewScopeRepo(db)
 	pending := oidc.NewPendingStore(rdb)
 
-	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, binding.NewStateStore(rdb), cfg.Server.BaseURL)
+	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), cfg.Server.BaseURL)
 	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
 
 	notifier := notify.New(mail.NewSender(mail.Config{
@@ -139,6 +140,7 @@ func run() error {
 		Keys:       keys,
 		Clients:    clients,
 		Accounts:   accounts,
+		Bindings:   bindingACLs,
 		Users:      users,
 		Groups:     groups,
 		Sessions:   sessions,
@@ -178,6 +180,7 @@ func run() error {
 
 	adminHandler := httpapi.NewAdmin(users, groups, sessions, refresh)
 	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry, logos)
+	adminBindings := httpapi.NewAdminBindings(registry, bindingACLs, groups, users)
 	router.GET("/api/clients/:id/logo", adminClients.Logo)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())
 	admin.GET("/users", adminHandler.ListUsers)
@@ -190,7 +193,8 @@ func run() error {
 	admin.POST("/groups/:id/members", adminHandler.AddGroupMember)
 	admin.DELETE("/groups/:id/members/:user_id", adminHandler.RemoveGroupMember)
 	admin.GET("/scopes", adminClients.Scopes)
-	admin.GET("/bindings", adminClients.Bindings)
+	admin.GET("/bindings", adminBindings.List)
+	admin.PUT("/bindings/:name", adminBindings.Update)
 	admin.GET("/clients", adminClients.List)
 	admin.POST("/clients", adminClients.Create)
 	admin.PATCH("/clients/:id", adminClients.Patch)

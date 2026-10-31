@@ -71,7 +71,7 @@ relay 会标记该账号，之后的本地命中登录都会先同步复核上�
 
 ### 第三方账号绑定
 
-绑定源来自 `bindings.providers` 配置，未配置时页面不显示该区域。
+绑定源来自 `bindings.providers` 配置，未配置时页面不显示该区域。来源若被设为私有，只有命中的用户在用户中心能看到该行，其他人看不到也无法发起绑定。
 
 1. 点击「去绑定」，跳转到对应平台的授权页。
 2. 在平台确认授权后回到 `/bindings/<provider>/callback`。
@@ -101,7 +101,7 @@ relay 会标记该账号，之后的本地命中登录都会先同步复核上�
 2. 校验 `response_type=code`，`scope` 必须包含 `openid` 且不超过应用允许的范围。
 3. 未登录时跳转 `/login?next=<原始授权请求>`。
 4. 检查应用限定的用户组，不在组内返回 `access_denied`。
-5. 检查应用要求的强制绑定，缺少绑定时跳转用户中心。
+5. 检查应用要求的强制绑定，账号无权使用该绑定源时返回 `access_denied`，缺少绑定时跳转用户中心。
 6. 检查用户是否已授予这些 scope，未授予时跳转 `/consent?req=<id>`。
 7. 校验 PKCE，公开客户端必须携带。
 8. 签发授权码并跳回 `redirect_uri`。
@@ -145,7 +145,14 @@ relay 会标记该账号，之后的本地命中登录都会先同步复核上�
 
 ### 绑定源
 
-只读展示 `bindings.providers` 中配置的来源。增加或修改绑定源需要改配置文件并重启 relay。
+来源本身在 `bindings.providers` 中声明，增加或修改需要改配置文件并重启 relay。每个来源的访问范围在后台配置，存于 `binding_acls`：
+
+| 访问范围 | 效果 |
+| --- | --- |
+| 所有登录用户 | 用户中心对全部登录用户显示该来源 |
+| 仅指定用户与用户组 | 只有用户白名单或指定用户组（含祖先组）里的账号能看到并使用；白名单为空时没有任何账号可用 |
+
+未配置过访问控制的来源等同于对所有登录用户开放。无权限的用户看不到该行，直接访问 `/api/bindings/<provider>/start` 返回 403。应用把该来源设为强制绑定时，无权限的账号在授权环节按 `access_denied` 回跳，不会陷入绑定死循环。
 
 ## 命令行
 
@@ -240,7 +247,8 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | GET | `/api/admin/groups/<id>/members` | 组成员 |
 | PUT | `/api/admin/groups/<id>/members` | 整体替换组成员 |
 | GET | `/api/admin/scopes` | 全部 scope |
-| GET | `/api/admin/bindings` | 已配置的绑定源 |
+| GET | `/api/admin/bindings` | 已配置的绑定源与各自的访问控制 |
+| PUT | `/api/admin/bindings/<provider>` | 保存绑定源访问范围、用户组与用户白名单 |
 | GET | `/api/admin/clients` | 应用列表 |
 | POST | `/api/admin/clients` | 新建应用 |
 | PATCH | `/api/admin/clients/<id>` | 修改名称、回调、强制绑定、启用状态、客户端类型 |

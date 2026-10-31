@@ -28,6 +28,7 @@ type Provider struct {
 	keys     *Keys
 	clients  *repo.ClientRepo
 	accounts *repo.AccountRepo
+	bindings *repo.BindingACLRepo
 	users    *repo.UserRepo
 	groups   *repo.GroupRepo
 	sessions *session.Manager
@@ -48,6 +49,7 @@ type Options struct {
 	Keys       *Keys
 	Clients    *repo.ClientRepo
 	Accounts   *repo.AccountRepo
+	Bindings   *repo.BindingACLRepo
 	Users      *repo.UserRepo
 	Groups     *repo.GroupRepo
 	Sessions   *session.Manager
@@ -69,6 +71,7 @@ func New(opts Options) *Provider {
 		keys:       opts.Keys,
 		clients:    opts.Clients,
 		accounts:   opts.Accounts,
+		bindings:   opts.Bindings,
 		users:      opts.Users,
 		groups:     opts.Groups,
 		sessions:   opts.Sessions,

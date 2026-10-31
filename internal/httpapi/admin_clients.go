@@ -476,15 +476,6 @@ const (
 	errInvalidBinding  adminError = "存在未配置的绑定源"
 )
 
-func (h *AdminClients) Bindings(c *gin.Context) {
-	providers := h.registry.List()
-	out := make([]gin.H, 0, len(providers))
-	for _, provider := range providers {
-		out = append(out, gin.H{"name": provider.Name, "display_name": provider.DisplayName})
-	}
-	c.JSON(http.StatusOK, gin.H{"providers": out})
-}
-
 func (h *AdminClients) Logo(c *gin.Context) {
 	client, err := h.clients.ByClientID(c.Request.Context(), c.Param("id"))
 	if err != nil || client.LogoType == "" {

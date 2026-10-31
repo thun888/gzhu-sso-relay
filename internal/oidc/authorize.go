@@ -67,6 +67,15 @@ func (p *Provider) Authorize(c *gin.Context) {
 	}
 
 	for _, required := range client.RequiredBindings {
+		permitted, err := p.bindings.Allows(ctx, required, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
+		if !permitted {
+			redirectError(c, redirectURI, state, "access_denied", "该应用要求绑定 "+required+"，但当前账号无权使用该绑定源")
+			return
+		}
 		bound, err := p.accounts.HasBinding(ctx, user.ID, required)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})

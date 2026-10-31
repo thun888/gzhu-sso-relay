@@ -16,16 +16,18 @@ type Account struct {
 	accounts *repo.AccountRepo
 	groups   *repo.GroupRepo
 	registry *binding.Registry
+	acls     *repo.BindingACLRepo
 	states   *binding.StateStore
 	baseURL  string
 }
 
-func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.GroupRepo, registry *binding.Registry, states *binding.StateStore, baseURL string) *Account {
+func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.GroupRepo, registry *binding.Registry, acls *repo.BindingACLRepo, states *binding.StateStore, baseURL string) *Account {
 	return &Account{
 		users:    users,
 		accounts: accounts,
 		groups:   groups,
 		registry: registry,
+		acls:     acls,
 		states:   states,
 		baseURL:  strings.TrimSuffix(baseURL, "/"),
 	}
@@ -75,6 +77,14 @@ func (h *Account) Me(c *gin.Context) {
 
 	bindings := make([]bindingView, 0, len(h.registry.List()))
 	for _, provider := range h.registry.List() {
+		permitted, err := h.acls.Allows(ctx, provider.Name, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询绑定源权限失败"})
+			return
+		}
+		if !permitted {
+			continue
+		}
 		view := bindingView{Provider: provider.Name, DisplayName: provider.DisplayName}
 		if item, ok := bound[provider.Name]; ok {
 			view.Bound = true
@@ -105,6 +115,16 @@ func (h *Account) StartBinding(c *gin.Context) {
 	name := c.Param("provider")
 	if _, ok := h.registry.Get(name); !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未配置的绑定源"})
+		return
+	}
+
+	permitted, err := h.acls.Allows(c.Request.Context(), name, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询绑定源权限失败"})
+		return
+	}
+	if !permitted {
+		c.JSON(http.StatusForbidden, gin.H{"error": "当前账号无权使用该绑定源"})
 		return
 	}
 

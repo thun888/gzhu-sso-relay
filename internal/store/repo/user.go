@@ -140,3 +140,30 @@ func (r *UserRepo) MissingUsers(ctx context.Context, ids []string) ([]string, er
 	}
 	return missing, nil
 }
+
+// MemberViews 按给定学号取用户概要，顺序与入参一致，已删除的学号会被跳过。
+func (r *UserRepo) MemberViews(ctx context.Context, ids []string) ([]MemberView, error) {
+	if len(ids) == 0 {
+		return []MemberView{}, nil
+	}
+
+	var users []model.User
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("repo: 查询用户概要: %w", err)
+	}
+
+	byID := make(map[string]model.User, len(users))
+	for _, user := range users {
+		byID[user.ID] = user
+	}
+
+	out := make([]MemberView, 0, len(ids))
+	for _, id := range ids {
+		user, ok := byID[id]
+		if !ok {
+			continue
+		}
+		out = append(out, MemberView{ID: user.ID, Name: user.Name, Email: user.Email, Status: user.Status})
+	}
+	return out, nil
+}
