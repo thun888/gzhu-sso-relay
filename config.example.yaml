@@ -37,7 +37,7 @@ server:
     enabled: true
     text: "© 广州大学"
 
-# 32 字节密钥，base64 或 hex 编码，用于加密上游令牌。可用 openssl rand -base64 32 生成
+# 32 字节密钥，base64 或 hex 编码，用于加密账号身份快照。可用 openssl rand -base64 32 生成
 secret_key: ""
 
 database:

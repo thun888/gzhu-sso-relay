@@ -52,7 +52,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if _, err := cryptox.NewCipher(key); err != nil {
+	cipher, err := cryptox.NewCipher(key)
+	if err != nil {
 		return err
 	}
 
@@ -77,7 +78,7 @@ func run() error {
 	}
 
 	users := repo.NewUserRepo(db)
-	accounts := repo.NewAccountRepo(db)
+	accounts := repo.NewAccountRepo(db, cipher)
 	clients := repo.NewClientRepo(db)
 	groups := repo.NewGroupRepo(db)
 	sessions := session.New(rdb)

@@ -127,7 +127,7 @@ openssl rand -base64 32
 openssl rand -hex 32
 ```
 
-该字段为敏感数据加密预留，当前版本仅做启动校验，绑定流程只保存身份快照，不落盘 access token。配置后不要随意更换，后续版本启用加密时旧数据会依赖它。该值不要与 `signing_key_path` 混用：前者是对称加密密钥，后者是 OIDC 签名私钥。
+该密钥用于 AES-GCM 加密 `oauth_accounts.profile_data`（上游资料快照与第三方绑定的原始身份信息）。绑定流程只保存身份快照，不落盘 access token。历史明文数据读取时自动兼容，下次写入时转为密文。更换该密钥后已加密数据无法解密。该值不要与 `signing_key_path` 混用：前者是对称加密密钥，后者是 OIDC 签名私钥。
 
 ## database
 

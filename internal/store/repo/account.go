@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
 
@@ -17,11 +19,28 @@ import (
 const UpstreamProvider = "gzhu"
 
 type AccountRepo struct {
-	db *gorm.DB
+	db     *gorm.DB
+	cipher *cryptox.Cipher
 }
 
-func NewAccountRepo(db *gorm.DB) *AccountRepo {
-	return &AccountRepo{db: db}
+func NewAccountRepo(db *gorm.DB, cipher *cryptox.Cipher) *AccountRepo {
+	return &AccountRepo{db: db, cipher: cipher}
+}
+
+// sealProfile 加密快照；openProfile 解密 v1 密文，无前缀的历史明文原样返回。
+func (r *AccountRepo) sealProfile(raw []byte) string {
+	return r.cipher.Seal(raw)
+}
+
+func (r *AccountRepo) openProfile(stored string) ([]byte, error) {
+	if !strings.HasPrefix(stored, "v1:") {
+		return []byte(stored), nil
+	}
+	plain, err := r.cipher.Open(stored)
+	if err != nil {
+		return nil, fmt.Errorf("repo: 解密 profile 快照: %w", err)
+	}
+	return plain, nil
 }
 
 func (r *AccountRepo) ByUserAndProvider(ctx context.Context, userID, provider string) (*model.OAuthAccount, error) {
@@ -44,12 +63,13 @@ func (r *AccountRepo) SaveProfile(ctx context.Context, userID, provider, provide
 	if err != nil {
 		return fmt.Errorf("repo: 序列化 profile: %w", err)
 	}
+	sealed := r.sealProfile(raw)
 
 	account := model.OAuthAccount{
 		UserID:         userID,
 		Provider:       provider,
 		ProviderUserID: providerUserID,
-		ProfileData:    raw,
+		ProfileData:    sealed,
 	}
 
 	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -74,7 +94,10 @@ func (r *AccountRepo) ProfileData(ctx context.Context, userID, provider string) 
 	if err != nil {
 		return nil, fmt.Errorf("repo: 读取 %s/%s 的 profile_data: %w", userID, provider, err)
 	}
-	return a.ProfileData, nil
+	if a.ProfileData == "" {
+		return nil, nil
+	}
+	return r.openProfile(a.ProfileData)
 }
 
 // ClassOf 从快照里取班级，快照缺失或未记录时返回空串。
@@ -111,12 +134,13 @@ func (r *AccountRepo) Bind(ctx context.Context, userID, provider, providerUserID
 	if err != nil {
 		return fmt.Errorf("repo: 序列化绑定快照: %w", err)
 	}
+	sealed := r.sealProfile(profile)
 
 	account := model.OAuthAccount{
 		UserID:         userID,
 		Provider:       provider,
 		ProviderUserID: providerUserID,
-		ProfileData:    profile,
+		ProfileData:    sealed,
 	}
 
 	err = r.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -153,8 +177,12 @@ func (r *AccountRepo) BindingsOf(ctx context.Context, userID string) ([]Binding,
 	for _, account := range accounts {
 		display := account.ProviderUserID
 		var profile BindingProfile
-		if len(account.ProfileData) > 0 && json.Unmarshal(account.ProfileData, &profile) == nil && profile.DisplayName != "" {
-			display = profile.DisplayName
+		if account.ProfileData != "" {
+			if raw, err := r.openProfile(account.ProfileData); err == nil {
+				if json.Unmarshal(raw, &profile) == nil && profile.DisplayName != "" {
+					display = profile.DisplayName
+				}
+			}
 		}
 		out = append(out, Binding{
 			Provider:       account.Provider,

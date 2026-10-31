@@ -31,15 +31,13 @@ type User struct {
 }
 
 // OAuthAccount 同时承担上游身份绑定与 profile_data 快照。
-// AccessToken 与 RefreshToken 存 cryptox 密文，Provider 为 gitea 时 ProviderUserID 是 gitea 用户名。
+// ProfileData 存 cryptox 密文（v1: 前缀），Provider 为 gitea 时 ProviderUserID 是 gitea 用户名。
 type OAuthAccount struct {
 	ID             string `gorm:"primaryKey;size:36"`
 	UserID         string `gorm:"size:32;not null;uniqueIndex:idx_oauth_accounts_user_provider,priority:1"`
 	Provider       string `gorm:"size:32;not null;uniqueIndex:idx_oauth_accounts_user_provider,priority:2;uniqueIndex:idx_oauth_accounts_provider_uid,priority:1"`
 	ProviderUserID string `gorm:"size:128;not null;uniqueIndex:idx_oauth_accounts_provider_uid,priority:2"`
-	AccessToken    string `gorm:"type:text"`
-	RefreshToken   string `gorm:"type:text"`
-	ProfileData    []byte `gorm:"type:jsonb"`
+	ProfileData    string `gorm:"type:text"`
 	Timestamps
 }
 

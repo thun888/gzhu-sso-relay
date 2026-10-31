@@ -41,6 +41,10 @@ func Open(dsn string) (*gorm.DB, error) {
 }
 
 func Migrate(db *gorm.DB, logos *logo.Store) error {
+	if err := migrateProfileDataText(db); err != nil {
+		return err
+	}
+
 	hadPrivate := db.Migrator().HasColumn(&model.OAuthClient{}, "is_private")
 
 	err := db.AutoMigrate(
@@ -72,6 +76,28 @@ func Migrate(db *gorm.DB, logos *logo.Store) error {
 	}
 	if err := backfillClientArrays(db); err != nil {
 		return err
+	}
+	return nil
+}
+
+// profile_data 早期是 jsonb 明文，加密后存的是非 JSON 字符串，迁移成 text。
+// jsonb 不能自动转换到 text，必须带 USING；列不存在（首次部署）时跳过。
+func migrateProfileDataText(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&model.OAuthAccount{}) {
+		return nil
+	}
+	var dataType string
+	err := db.Raw(`SELECT data_type FROM information_schema.columns
+		WHERE table_name = 'oauth_accounts' AND column_name = 'profile_data'`).Scan(&dataType).Error
+	if err != nil {
+		return fmt.Errorf("store: 查询 profile_data 列类型: %w", err)
+	}
+	if dataType != "jsonb" {
+		return nil
+	}
+	err = db.Exec("ALTER TABLE oauth_accounts ALTER COLUMN profile_data TYPE text USING profile_data::text").Error
+	if err != nil {
+		return fmt.Errorf("store: 迁移 profile_data 列类型: %w", err)
 	}
 	return nil
 }
