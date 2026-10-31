@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -131,6 +132,18 @@ func (r *ClientRepo) Create(ctx context.Context, client *model.OAuthClient) erro
 func (r *ClientRepo) Update(ctx context.Context, clientID string, fields map[string]any) error {
 	if len(fields) == 0 {
 		return nil
+	}
+	// map 更新不经过字段的 serializer:json，[]string 需先序列化才能写入 jsonb 列。
+	for key, value := range fields {
+		values, ok := value.([]string)
+		if !ok {
+			continue
+		}
+		encoded, err := json.Marshal(values)
+		if err != nil {
+			return fmt.Errorf("repo: 序列化应用字段 %s: %w", key, err)
+		}
+		fields[key] = string(encoded)
 	}
 	err := r.db.WithContext(ctx).Model(&model.OAuthClient{}).
 		Where("client_id = ?", clientID).
