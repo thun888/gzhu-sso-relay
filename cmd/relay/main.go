@@ -173,11 +173,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	router.NoRoute(spaRoute(spa))
+	router.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	})
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
-		Handler:           router,
+		Handler:           spaOrAPI(router, spa),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -240,13 +242,20 @@ func pingDatabase(ctx context.Context, db *gorm.DB) error {
 	return sqlDB.PingContext(ctx)
 }
 
-func spaRoute(spa http.Handler) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/oidc/") || path == "/healthz" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
+// spaOrAPI 按前缀把接口交给 gin，其余路径交给前端。
+// 用 gin 的 NoRoute 兜底会把状态码提前写成 404，页面内容正确但状态码是错的。
+func spaOrAPI(api, spa http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case path == "/healthz",
+			strings.HasPrefix(path, "/api/"),
+			strings.HasPrefix(path, "/oidc/"),
+			strings.HasPrefix(path, "/bindings/"),
+			strings.HasPrefix(path, "/.well-known/"):
+			api.ServeHTTP(w, r)
+		default:
+			spa.ServeHTTP(w, r)
 		}
-		spa.ServeHTTP(c.Writer, c.Request)
-	}
+	})
 }
