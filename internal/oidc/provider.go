@@ -29,6 +29,7 @@ type Provider struct {
 	clients  *repo.ClientRepo
 	accounts *repo.AccountRepo
 	users    *repo.UserRepo
+	groups   *repo.GroupRepo
 	sessions *session.Manager
 	codes     *CodeStore
 	consents  *repo.ConsentRepo
@@ -46,6 +47,7 @@ type Options struct {
 	Clients    *repo.ClientRepo
 	Accounts   *repo.AccountRepo
 	Users      *repo.UserRepo
+	Groups     *repo.GroupRepo
 	Sessions   *session.Manager
 	Codes      *CodeStore
 	Consents   *repo.ConsentRepo
@@ -64,6 +66,7 @@ func New(opts Options) *Provider {
 		clients:    opts.Clients,
 		accounts:   opts.Accounts,
 		users:      opts.Users,
+		groups:     opts.Groups,
 		sessions:   opts.Sessions,
 		codes:      opts.Codes,
 		consents:   opts.Consents,
@@ -113,6 +116,11 @@ func (p *Provider) claimsFor(ctx context.Context, user *model.User, scopes []str
 	if hasScope(scopes, "email") {
 		claims["email"] = user.Email
 		claims["email_verified"] = true
+	}
+	if hasScope(scopes, "groups") {
+		if codes, err := p.groups.EffectiveCodes(ctx, user.ID); err == nil && len(codes) > 0 {
+			claims["groups"] = codes
+		}
 	}
 	return claims
 }

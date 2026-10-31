@@ -26,6 +26,8 @@ relay 对外提供标准 OIDC 授权码流程。应用只需要 discovery 地址
 
 `openid`、`profile`、`email` 三个内置 scope 对所有应用默认开放，不需要勾选。管理后台仍可勾选，但对这三个内置 scope 不改变实际允许范围。
 
+`groups` 不在默认开放范围内，需要管理员在应用详情里勾选后才能申请；用户首次申请时会出现一次授权确认页。
+
 ## 端点
 
 | 端点 | 路径 |
@@ -45,7 +47,7 @@ discovery 声明的能力：
 | `grant_types_supported` | `authorization_code` |
 | `subject_types_supported` | `public` |
 | `id_token_signing_alg_values_supported` | `RS256` |
-| `scopes_supported` | `openid`、`profile`、`email` |
+| `scopes_supported` | `openid`、`profile`、`email`、`groups` |
 | `token_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `code_challenge_methods_supported` | `S256`、`plain` |
 
@@ -153,7 +155,8 @@ Authorization: Bearer <access_token>
   "name": "张三",
   "belong_class": "计算机 231",
   "email": "13800000000@gzhu.edu.cn",
-  "email_verified": true
+  "email_verified": true,
+  "groups": ["major:计算机科学与技术", "unit:计算机学院", "user_type:学生"]
 }
 ```
 
@@ -172,6 +175,7 @@ WWW-Authenticate: Bearer error="invalid_token"
 | `openid` | `sub` |
 | `profile` | `preferred_username`、`name`、`belong_class` |
 | `email` | `email`、`email_verified` |
+| `groups` | `groups` |
 
 | claim | 来源 | 说明 |
 | --- | --- | --- |
@@ -181,6 +185,7 @@ WWW-Authenticate: Bearer error="invalid_token"
 | `belong_class` | 门户 `BELONG_CLASS` | 班级，上游未返回时省略 |
 | `email` | 首次登录时生成 | `<门户 MOBILE>@<域名后缀>` |
 | `email_verified` | 固定 | 恒为 `true` |
+| `groups` | 用户组 | 用户所在组的 `code` 数组，含祖先组；无组时省略 |
 
 未授予的 scope 不产生任何对应 claim。例如只申请 `openid`，`id_token` 与 userinfo 只有 `sub`。
 
@@ -309,7 +314,7 @@ curl -s -H "Authorization: Bearer <access_token>" \
 - [ ] `server.base_url` 为外部 HTTPS 地址，与 discovery 中的 issuer 一致。
 - [ ] 应用回调地址已登记，且与代码中的值完全一致。
 - [ ] 机密客户端的 `client_secret` 保存在服务端环境变量或密钥管理中。
-- [ ] 申请了 `openid`，需要姓名时加 `profile`，需要邮箱时加 `email`。
+- [ ] 申请了 `openid`，需要姓名时加 `profile`，需要邮箱时加 `email`，需要按组判断权限时加 `groups`。
 - [ ] 公开客户端启用 PKCE，使用 `S256`。
 - [ ] 下游校验 `iss`、`aud`、`exp`，并通过 JWKS 校验签名。
 - [ ] 令牌过期后重新发起授权，不依赖 refresh token。

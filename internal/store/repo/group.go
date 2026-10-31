@@ -139,6 +139,29 @@ func (r *GroupRepo) OfUser(ctx context.Context, userID string) ([]model.Group, e
 	return groups, nil
 }
 
+// EffectiveCodes 返回用户的组标识，含直接所属的组与它们的全部祖先组，
+// 与应用访问控制使用的判定范围保持一致。
+func (r *GroupRepo) EffectiveCodes(ctx context.Context, userID string) ([]string, error) {
+	const query = `
+WITH RECURSIVE chain AS (
+	SELECT g.id, g.parent_id, g.code
+	FROM "groups" g
+	JOIN user_groups ug ON ug.group_id = g.id
+	WHERE ug.user_id = ?
+	UNION
+	SELECT parent.id, parent.parent_id, parent.code
+	FROM "groups" parent
+	JOIN chain c ON parent.id = c.parent_id
+)
+SELECT code FROM chain ORDER BY code`
+
+	codes := make([]string, 0)
+	if err := r.db.WithContext(ctx).Raw(query, userID).Scan(&codes).Error; err != nil {
+		return nil, fmt.Errorf("repo: 查询用户 %s 的有效用户组: %w", userID, err)
+	}
+	return codes, nil
+}
+
 type GroupSpec struct {
 	Code string
 	Name string

@@ -137,6 +137,7 @@ func run() error {
 		Clients:    clients,
 		Accounts:   accounts,
 		Users:      users,
+		Groups:     groups,
 		Sessions:   sessions,
 		Codes:      oidc.NewCodeStore(rdb),
 		Notifier:   notifier,

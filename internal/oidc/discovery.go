@@ -7,10 +7,10 @@ import (
 )
 
 // 与 store.Seed 写入的默认 scope 保持一致。
-var supportedScopes = []string{"openid", "profile", "email"}
+var supportedScopes = []string{"openid", "profile", "email", "groups"}
 
 var supportedClaims = []string{
-	"sub", "name", "preferred_username", "email", "email_verified", "belong_class",
+	"sub", "name", "preferred_username", "email", "email_verified", "belong_class", "groups",
 }
 
 func (p *Provider) Discovery(c *gin.Context) {
