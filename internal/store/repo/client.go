@@ -131,7 +131,7 @@ func (r *ClientRepo) Delete(ctx context.Context, clientID string) error {
 
 // ScopesOf 返回应用显式申请的 scope，不含全局默认项。
 func (r *ClientRepo) ScopesOf(ctx context.Context, clientID string) ([]string, error) {
-	var names []string
+	names := make([]string, 0)
 	err := r.db.WithContext(ctx).Model(&model.ClientAllowedScope{}).
 		Where("client_id = ?", clientID).
 		Order("scope_name").
@@ -162,7 +162,7 @@ func (r *ClientRepo) SetScopes(ctx context.Context, clientID string, names []str
 }
 
 func (r *ClientRepo) GroupIDsOf(ctx context.Context, clientID string) ([]uint64, error) {
-	var ids []uint64
+	ids := make([]uint64, 0)
 	err := r.db.WithContext(ctx).Model(&model.GroupOAuthClient{}).
 		Where("client_id = ?", clientID).
 		Order("group_id").

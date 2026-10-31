@@ -93,7 +93,7 @@ type MemberView struct {
 }
 
 func (r *GroupRepo) MemberViews(ctx context.Context, groupID uint64) ([]MemberView, error) {
-	var members []MemberView
+	members := make([]MemberView, 0)
 	err := r.db.WithContext(ctx).
 		Table("user_groups").
 		Select("users.id, users.name, users.email, users.status").
