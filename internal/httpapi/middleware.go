@@ -23,6 +23,7 @@ const contentSecurityPolicy = "default-src 'self'; " +
 
 // WithSecurityHeaders 给所有响应补上基础安全响应头，HSTS 只在 base_url 为 HTTPS 时下发。
 // 挂在最外层：前端静态页不经过 gin，放在中间件里会漏掉登录页与管理页。
+// X-Robots-Tag 与页面 meta、robots.txt 三处同时生效，避免只靠其中一种被绕过。
 func WithSecurityHeaders(secure bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
@@ -30,6 +31,7 @@ func WithSecurityHeaders(secure bool, next http.Handler) http.Handler {
 		header.Set("X-Frame-Options", "DENY")
 		header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		header.Set("Content-Security-Policy", contentSecurityPolicy)
+		header.Set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 		if secure {
 			header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
