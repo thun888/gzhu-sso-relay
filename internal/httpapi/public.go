@@ -9,15 +9,19 @@ import (
 )
 
 // PublicConfig 输出登录页渲染所需的公开配置，不含任何敏感字段。
-func PublicConfig(siteTitle string, panel config.LoginPanel, captcha *CaptchaPolicy) gin.HandlerFunc {
+func PublicConfig(server config.Server, captcha *CaptchaPolicy) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, gin.H{
-			"site_title": siteTitle,
+			"site_title": server.SiteTitle,
 			"login_panel": gin.H{
-				"enabled": panel.Enabled,
-				"title":   panel.Title,
-				"body":    panel.Body,
+				"enabled": server.LoginPanel.Enabled,
+				"title":   server.LoginPanel.Title,
+				"body":    server.LoginPanel.Body,
+			},
+			"login_footer": gin.H{
+				"enabled": server.LoginFooter.Enabled,
+				"text":    server.LoginFooter.Text,
 			},
 			"captcha": gin.H{
 				"enabled":    captcha.Enabled(),

@@ -4,6 +4,11 @@ export type LoginPanel = {
   body: string
 }
 
+export type LoginFooter = {
+  enabled: boolean
+  text: string
+}
+
 export type CaptchaConfig = {
   enabled: boolean
   captchaId: string
@@ -13,25 +18,30 @@ export type CaptchaConfig = {
 export type PublicConfig = {
   siteTitle: string
   panel: LoginPanel
+  footer: LoginFooter
   captcha: CaptchaConfig
 }
 
 export const emptyPanel: LoginPanel = { enabled: true, title: "", body: "" }
+
+export const emptyFooter: LoginFooter = { enabled: false, text: "" }
 
 export const emptyCaptcha: CaptchaConfig = { enabled: false, captchaId: "", required: false }
 
 export async function loadPublicConfig(): Promise<PublicConfig> {
   try {
     const res = await fetch("/api/public/config")
-    if (!res.ok) return { siteTitle: "", panel: emptyPanel, captcha: emptyCaptcha }
+    if (!res.ok) return { siteTitle: "", panel: emptyPanel, footer: emptyFooter, captcha: emptyCaptcha }
     const data = (await res.json()) as {
       site_title?: string
       login_panel?: LoginPanel
+      login_footer?: LoginFooter
       captcha?: { enabled?: boolean; captcha_id?: string; required?: boolean }
     }
     return {
       siteTitle: data.site_title ?? "",
       panel: data.login_panel ?? emptyPanel,
+      footer: data.login_footer ?? emptyFooter,
       captcha: {
         enabled: data.captcha?.enabled ?? false,
         captchaId: data.captcha?.captcha_id ?? "",
@@ -39,7 +49,7 @@ export async function loadPublicConfig(): Promise<PublicConfig> {
       },
     }
   } catch {
-    return { siteTitle: "", panel: emptyPanel, captcha: emptyCaptcha }
+    return { siteTitle: "", panel: emptyPanel, footer: emptyFooter, captcha: emptyCaptcha }
   }
 }
 

@@ -48,6 +48,7 @@ type Server struct {
 	SigningKeyPath string       `yaml:"signing_key_path"`
 	TrustedProxies []string     `yaml:"trusted_proxies"`
 	LoginPanel     LoginPanel   `yaml:"login_panel"`
+	LoginFooter    LoginFooter  `yaml:"login_footer"`
 }
 
 // LoginPanel 控制登录页右半区的预留文案，enabled 为 false 时登录卡片收成单栏。
@@ -55,6 +56,12 @@ type LoginPanel struct {
 	Enabled bool   `yaml:"enabled"`
 	Title   string `yaml:"title"`
 	Body    string `yaml:"body"`
+}
+
+// LoginFooter 控制登录页卡片下方的页脚文案，enabled 为 false 或文案为空时不显示。
+type LoginFooter struct {
+	Enabled bool   `yaml:"enabled"`
+	Text    string `yaml:"text"`
 }
 
 // EmailDomains 按 sub 前缀匹配邮箱后缀，取最长匹配。键为空字符串时匹配所有 sub，可作兜底。
@@ -128,6 +135,10 @@ func defaults() *Config {
 				Enabled: true,
 				Title:   "统一身份认证门户",
 				Body:    "此处为预留说明区域，可在 config.yaml 的 server.login_panel 中修改文案，或将 enabled 设为 false 隐藏本区域。",
+			},
+			LoginFooter: LoginFooter{
+				Enabled: true,
+				Text:    "© 广州大学",
 			},
 		},
 		Redis: Redis{Addr: "localhost:6379"},

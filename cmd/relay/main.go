@@ -139,7 +139,7 @@ func run() error {
 	router.GET("/oidc/authorize", provider.Authorize)
 	router.POST("/oidc/token", provider.Token)
 	router.GET("/oidc/userinfo", provider.UserInfo)
-	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server.SiteTitle, cfg.Server.LoginPanel, captchaPolicy))
+	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy))
 	router.POST("/api/login", authHandler.Login)
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)

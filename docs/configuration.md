@@ -41,6 +41,8 @@ redis:
 | `login_panel.enabled` | `true` | 登录页右侧文案区开关 |
 | `login_panel.title` | `"统一身份认证门户"` | 右侧区域标题 |
 | `login_panel.body` | 模板文案 | 右侧区域正文，支持换行 |
+| `login_footer.enabled` | `true` | 登录页页脚开关 |
+| `login_footer.text` | `"© 广州大学"` | 页脚文案，支持换行 |
 
 `login_url`、`consent_url`、`account_url` 保持默认值即可。显式留空会导致跳转异常；其中 `login_url` 为空时会被重置为 `/login`，另外两个不会自动修正。
 
@@ -104,6 +106,16 @@ login_panel:
 ```
 
 `enabled` 为 `false`，或 `title` 与 `body` 都为空时，登录卡片收成单栏。
+
+### login_footer
+
+```yaml
+login_footer:
+  enabled: true
+  text: "© 广州大学\n技术支持：网络中心"
+```
+
+页脚显示在登录卡片下方并居中。`enabled` 为 `false`，或 `text` 去掉空白后为空时不显示，登录卡片的居中位置不变。
 
 ## secret_key
 
@@ -256,6 +268,9 @@ server:
     enabled: true
     title: "统一身份认证门户"
     body: "账号问题请联系网络中心。"
+  login_footer:
+    enabled: true
+    text: "© 广州大学"
 
 secret_key: "<openssl rand -base64 32 的输出>"
 

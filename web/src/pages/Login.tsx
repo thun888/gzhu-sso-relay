@@ -4,13 +4,14 @@ import { Eye, EyeOff, Lock, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { safeNext, type CaptchaConfig, type LoginPanel } from "@/lib/config"
+import { safeNext, type CaptchaConfig, type LoginFooter, type LoginPanel } from "@/lib/config"
 import { createCaptcha, type CaptchaAnswer, type CaptchaInstance } from "@/lib/geetest"
 import { cn } from "@/lib/utils"
 
 type Props = {
   siteTitle: string
   panel: LoginPanel
+  footer: LoginFooter
   captcha: CaptchaConfig
 }
 
@@ -23,7 +24,7 @@ function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
 
-export default function Login({ siteTitle, panel, captcha }: Props) {
+export default function Login({ siteTitle, panel, footer, captcha }: Props) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [revealed, setRevealed] = useState(false)
@@ -37,6 +38,7 @@ export default function Login({ siteTitle, panel, captcha }: Props) {
 
   const needCaptcha = captcha.enabled && (captcha.required || gated)
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
+  const showFooter = footer.enabled && Boolean(footer.text.trim())
 
   useEffect(() => {
     submitRef.current = (answer) => {
@@ -122,7 +124,7 @@ export default function Login({ siteTitle, panel, captcha }: Props) {
       className="min-h-screen w-full bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: "url(/background.webp)" }}
     >
-      <div className="flex min-h-screen items-center justify-center px-5 py-10">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-5 py-10">
         <Card
           className={cn(
             "w-full gap-0 overflow-hidden border-border/70 bg-card/95 py-0 backdrop-blur-sm",
@@ -233,6 +235,12 @@ export default function Login({ siteTitle, panel, captcha }: Props) {
             )}
           </div>
         </Card>
+
+        {showFooter && (
+          <p className="max-w-[560px] px-2 text-center text-[12px] leading-[1.8] whitespace-pre-line text-muted-foreground">
+            {footer.text}
+          </p>
+        )}
       </div>
     </div>
   )
