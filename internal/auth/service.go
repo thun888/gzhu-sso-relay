@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"math/rand/v2"
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
@@ -31,6 +33,7 @@ type Upstream struct {
 	CASBaseURL    string
 	PortalBaseURL string
 	Timeout       time.Duration
+	RefreshRate   float64
 }
 
 type Service struct {
@@ -81,7 +84,11 @@ func (s *Service) Login(ctx context.Context, id, password string) (*Result, erro
 	}
 
 	if ok, verr := cryptox.VerifyPassword(user.PasswordHash, password); verr == nil && ok {
-		return s.issue(ctx, user)
+		result, err := s.issue(ctx, user)
+		if err == nil && s.shouldRefresh() {
+			s.refreshUpstream(user.ID, password)
+		}
+		return result, err
 	}
 
 	profile, err := s.authenticateUpstream(ctx, id, password)
@@ -155,6 +162,29 @@ func (s *Service) provision(ctx context.Context, id, password string) (*Result, 
 	return s.issue(ctx, user)
 }
 
+// shouldRefresh 决定这次登录是否顺带刷新上游资料。本地哈希能命中就不会访问上游，
+// 完全靠它同步会让学院、身份这类信息一直停在首次登录时的值。
+func (s *Service) shouldRefresh() bool {
+	return s.upstream.RefreshRate > 0 && rand.Float64() < s.upstream.RefreshRate
+}
+
+// refreshUpstream 在响应返回后再访问上游，失败只记日志，不影响这次登录。
+func (s *Service) refreshUpstream(userID, password string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), s.upstream.Timeout)
+		defer cancel()
+
+		profile, err := s.fetchUpstream(ctx, userID, password)
+		if err != nil {
+			log.Printf("刷新上游资料失败 id=%s: %v", userID, err)
+			return
+		}
+		if err := s.saveUpstreamProfile(ctx, userID, profile); err != nil {
+			log.Printf("刷新上游资料失败 id=%s: %v", userID, err)
+		}
+	}()
+}
+
 // saveUpstreamProfile 落库上游快照并重建同步组，只在真正访问过上游后调用。
 func (s *Service) saveUpstreamProfile(ctx context.Context, userID string, profile portal.Profile) error {
 	if err := s.accounts.SaveProfile(ctx, userID, repo.UpstreamProvider, profile.Sub, profile); err != nil {
@@ -211,7 +241,10 @@ func (s *Service) authenticateUpstream(ctx context.Context, id, password string)
 	if !allowed {
 		return portal.Profile{}, ErrTooManyAttempts
 	}
+	return s.fetchUpstream(ctx, id, password)
+}
 
+func (s *Service) fetchUpstream(ctx context.Context, id, password string) (portal.Profile, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return portal.Profile{}, fmt.Errorf("auth: 创建 cookie jar: %w", err)

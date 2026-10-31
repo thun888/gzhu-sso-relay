@@ -88,6 +88,7 @@ func run() error {
 			CASBaseURL:    cfg.Upstream.CASBaseURL,
 			PortalBaseURL: cfg.Upstream.PortalBaseURL,
 			Timeout:       cfg.Upstream.Timeout.Std(),
+			RefreshRate:   cfg.Upstream.RefreshRate,
 		},
 		EmailDomains: cfg.Server.EmailDomains,
 	})

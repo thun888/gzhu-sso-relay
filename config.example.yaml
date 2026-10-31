@@ -46,6 +46,8 @@ upstream:
   cas_base_url: "https://newcas.gzhu.edu.cn"
   portal_base_url: "https://newmy.gzhu.edu.cn"
   timeout: 30s
+  # 每次登录成功后按该概率异步回访上游，刷新资料快照与上游用户组；0 表示从不刷新
+  refresh_rate: 0.1
 
 # 极验行为验证。默认只在某个 IP 登录失败后，fail_window 内要求验证码；
 # 期间任意一次登录成功即解除，直到下次失败重新要求验证

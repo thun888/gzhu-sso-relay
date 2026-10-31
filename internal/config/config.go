@@ -91,6 +91,8 @@ type Upstream struct {
 	CASBaseURL    string   `yaml:"cas_base_url"`
 	PortalBaseURL string   `yaml:"portal_base_url"`
 	Timeout       Duration `yaml:"timeout"`
+	// RefreshRate 是每次登录成功后异步回访上游的概率，0 表示从不刷新。
+	RefreshRate float64 `yaml:"refresh_rate"`
 }
 
 func Load(path string) (*Config, error) {
@@ -136,6 +138,7 @@ func defaults() *Config {
 			CASBaseURL:    "https://newcas.gzhu.edu.cn",
 			PortalBaseURL: "https://newmy.gzhu.edu.cn",
 			Timeout:       Duration(30 * time.Second),
+			RefreshRate:   0.1,
 		},
 	}
 }
@@ -181,6 +184,9 @@ func (c *Config) validate() error {
 
 	if c.Upstream.Timeout <= 0 {
 		return errors.New("upstream.timeout 必须为正数")
+	}
+	if c.Upstream.RefreshRate < 0 || c.Upstream.RefreshRate > 1 {
+		return errors.New("upstream.refresh_rate 必须在 0 到 1 之间")
 	}
 	if c.Captcha.FailWindow <= 0 {
 		return errors.New("captcha.fail_window 必须为正数")
