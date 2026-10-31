@@ -25,7 +25,6 @@ type Client = {
 }
 
 const emptyForm = {
-  client_id: "",
   name: "",
   redirect: "",
   scopes: [] as string[],
@@ -94,7 +93,6 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
       const data = await api<{ client_id: string; client_secret: string }>("/api/admin/clients", {
         method: "POST",
         body: JSON.stringify({
-          client_id: form.client_id.trim(),
           name: form.name.trim(),
           redirect_urls: form.redirect
             .split(/[\s,]+/)
@@ -479,15 +477,7 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
       </Panel>
 
       <Panel title="新建应用" description="创建后会生成 client_secret，仅显示一次">
-        <FormRow label="client_id" hint="字母、数字、下划线或连字符，创建后不可修改">
-          <Input
-            className="h-9 max-w-[320px] font-mono"
-            placeholder="例如 gitea"
-            value={form.client_id}
-            onChange={(event) => setForm({ ...form, client_id: event.target.value })}
-          />
-        </FormRow>
-        <FormRow label="应用名称">
+        <FormRow label="应用名称" hint="client_id 与密钥在创建后自动生成，只显示一次">
           <Input
             className="h-9 max-w-[320px]"
             placeholder="例如 Gitea"
@@ -560,7 +550,7 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
         <div className="flex justify-end px-6 py-3">
           <Button
             className="h-9 w-auto px-4"
-            disabled={!form.client_id.trim() || !form.name.trim()}
+            disabled={!form.name.trim()}
             onClick={create}
           >
             创建应用

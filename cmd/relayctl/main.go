@@ -64,8 +64,17 @@ func createClient(ctx context.Context, db *gorm.DB, args []string) {
 	public := fs.Bool("public", false, "公开客户端，不校验密钥")
 	_ = fs.Parse(args)
 
-	if *id == "" || *name == "" || *redirects == "" {
-		die(fmt.Errorf("-id、-name、-redirect 均为必填"))
+	if *name == "" || *redirects == "" {
+		die(fmt.Errorf("-name、-redirect 均为必填"))
+	}
+
+	clientID := *id
+	if clientID == "" {
+		generated, err := cryptox.NewClientID()
+		if err != nil {
+			die(err)
+		}
+		clientID = generated
 	}
 
 	var secret, hash string
@@ -78,7 +87,7 @@ func createClient(ctx context.Context, db *gorm.DB, args []string) {
 	}
 
 	client := model.OAuthClient{
-		ClientID:     *id,
+		ClientID:     clientID,
 		SecretHash:   hash,
 		Name:         *name,
 		RedirectURLs: splitList(*redirects),
@@ -89,7 +98,7 @@ func createClient(ctx context.Context, db *gorm.DB, args []string) {
 	}
 
 	for _, scope := range splitList(*scopes) {
-		link := model.ClientAllowedScope{ClientID: *id, ScopeName: scope}
+		link := model.ClientAllowedScope{ClientID: clientID, ScopeName: scope}
 		if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&link).Error; err != nil {
 			die(fmt.Errorf("写入 %s 的 scope 失败: %w", scope, err))
 		}
@@ -214,7 +223,7 @@ func usage() {
 
   relayctl [-config 路径] <命令>
 
-  relayctl client create -id <client_id> -name <名称> -redirect <回调地址[,地址]> [-scopes a,b] [-public]
+  relayctl client create -name <名称> -redirect <回调地址[,地址]> [-id 自定义标识] [-scopes a,b] [-public]
   relayctl client list
   relayctl client delete -id <client_id>
   relayctl user promote -id <学号> [-revoke]

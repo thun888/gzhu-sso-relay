@@ -66,6 +66,15 @@ func VerifyPassword(encoded, password string) (bool, error) {
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
+// NewClientID 生成不透明的 client_id。它是公开标识，不需要可读。
+func NewClientID() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
 // NewSecret 生成客户端密钥，返回明文与其哈希，明文只交付一次。
 func NewSecret() (plain, hash string, err error) {
 	buf := make([]byte, 32)

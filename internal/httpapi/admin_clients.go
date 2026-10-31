@@ -81,7 +81,7 @@ func (h *AdminClients) List(c *gin.Context) {
 }
 
 type clientCreate struct {
-	ClientID         string   `json:"client_id" binding:"required"`
+	ClientID         string   `json:"client_id"`
 	Name             string   `json:"name" binding:"required"`
 	RedirectURLs     []string `json:"redirect_urls"`
 	Scopes           []string `json:"scopes"`
@@ -93,12 +93,19 @@ type clientCreate struct {
 func (h *AdminClients) Create(c *gin.Context) {
 	var req clientCreate
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "client_id 与 name 均为必填"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "应用名称不能为空"})
 		return
 	}
 
 	clientID := strings.TrimSpace(req.ClientID)
-	if !validClientID(clientID) {
+	if clientID == "" {
+		generated, err := cryptox.NewClientID()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 client_id 失败"})
+			return
+		}
+		clientID = generated
+	} else if !validClientID(clientID) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "client_id 只能包含字母、数字、下划线和连字符"})
 		return
 	}
