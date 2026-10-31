@@ -15,6 +15,7 @@ type OAuthClient struct {
 	Enabled     bool   `gorm:"not null;default:true"`
 	HomepageURL string `gorm:"size:255"`
 	Description string `gorm:"size:255"`
+	Owner       string `gorm:"size:128"`
 	// LogoType 非空表示 data/logos 下有同名文件，内容类型用于响应头。
 	LogoType string `gorm:"size:64"`
 	Timestamps

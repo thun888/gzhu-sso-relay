@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { currentPath } from "@/lib/config"
 
 type ConsentInfo = {
-  client: { id: string; name: string }
+  client: { id: string; name: string; owner: string }
   scopes: { name: string; display_name: string; description: string }[]
 }
 
@@ -133,6 +133,13 @@ export default function Consent({ siteTitle }: { siteTitle: string }) {
         <p className="mt-1.5 text-[13px] text-muted-foreground">
           同意后该应用可以获得以下信息，之后再次登录将不再询问
         </p>
+
+        {info.client.owner && (
+          <p className="mt-3 flex items-baseline gap-2 text-[12.5px]">
+            <span className="text-muted-foreground">应用负责人</span>
+            <span className="text-foreground">{info.client.owner}</span>
+          </p>
+        )}
 
         <ul className="mt-6 space-y-2">
           {info.scopes.map((scope) => (

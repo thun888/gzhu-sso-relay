@@ -76,7 +76,7 @@ func (h *Consent) Show(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{
-		"client": gin.H{"id": client.ClientID, "name": client.Name},
+		"client": gin.H{"id": client.ClientID, "name": client.Name, "owner": client.Owner},
 		"scopes": views,
 	})
 }

@@ -36,6 +36,7 @@ type clientView struct {
 	LogoURL          string            `json:"logo_url"`
 	HomepageURL      string            `json:"homepage_url"`
 	Description      string            `json:"description"`
+	Owner            string            `json:"owner"`
 	IsPublic         bool              `json:"is_public"`
 	IsPrivate        bool              `json:"is_private"`
 	Enabled          bool              `json:"enabled"`
@@ -90,6 +91,7 @@ func (h *AdminClients) List(c *gin.Context) {
 			LogoURL:          logoURL,
 			HomepageURL:      client.HomepageURL,
 			Description:      client.Description,
+			Owner:            client.Owner,
 			IsPublic:         client.IsPublic,
 			IsPrivate:        client.IsPrivate,
 			Enabled:          client.Enabled,
@@ -110,6 +112,7 @@ type clientCreate struct {
 	Name             string   `json:"name" binding:"required"`
 	HomepageURL      string   `json:"homepage_url"`
 	Description      string   `json:"description"`
+	Owner            string   `json:"owner"`
 	RedirectURLs     []string `json:"redirect_urls"`
 	Scopes           []string `json:"scopes"`
 	RequiredBindings []string `json:"required_bindings"`
@@ -175,6 +178,7 @@ func (h *AdminClients) Create(c *gin.Context) {
 		Name:             req.Name,
 		HomepageURL:      strings.TrimSpace(req.HomepageURL),
 		Description:      strings.TrimSpace(req.Description),
+		Owner:            strings.TrimSpace(req.Owner),
 		RedirectURLs:     redirects,
 		RequiredBindings: bindings,
 		IsPublic:         req.IsPublic,
@@ -200,6 +204,7 @@ type clientPatch struct {
 	Name             *string   `json:"name"`
 	HomepageURL      *string   `json:"homepage_url"`
 	Description      *string   `json:"description"`
+	Owner            *string   `json:"owner"`
 	RedirectURLs     *[]string `json:"redirect_urls"`
 	RequiredBindings *[]string `json:"required_bindings"`
 	IsPublic         *bool     `json:"is_public"`
@@ -225,6 +230,9 @@ func (h *AdminClients) Patch(c *gin.Context) {
 	}
 	if req.Description != nil {
 		fields["description"] = strings.TrimSpace(*req.Description)
+	}
+	if req.Owner != nil {
+		fields["owner"] = strings.TrimSpace(*req.Owner)
 	}
 	if req.RedirectURLs != nil {
 		if err := h.checkRedirects(*req.RedirectURLs); err != nil {

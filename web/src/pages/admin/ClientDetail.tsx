@@ -81,6 +81,7 @@ export function ClientDetail({
   const [name, setName] = useState(client.name)
   const [homepage, setHomepage] = useState(client.homepage_url)
   const [description, setDescription] = useState(client.description)
+  const [owner, setOwner] = useState(client.owner)
   const [redirects, setRedirects] = useState(client.redirect_urls)
   const [selectedScopes, setSelectedScopes] = useState(client.scopes)
   const [bindings, setBindings] = useState(client.required_bindings)
@@ -105,6 +106,7 @@ export function ClientDetail({
     setName(client.name)
     setHomepage(client.homepage_url)
     setDescription(client.description)
+    setOwner(client.owner)
     setRedirects(client.redirect_urls)
     setSelectedScopes(client.scopes)
     setBindings(client.required_bindings)
@@ -142,6 +144,7 @@ export function ClientDetail({
     name.trim() !== client.name ||
     homepage.trim() !== client.homepage_url ||
     description.trim() !== client.description ||
+    owner.trim() !== client.owner ||
     redirects.join("\n") !== client.redirect_urls.join("\n") ||
     !sameSet(selectedScopes, client.scopes) ||
     !sameSet(bindings, client.required_bindings) ||
@@ -160,6 +163,7 @@ export function ClientDetail({
       if (name.trim() !== client.name) body.name = name.trim()
       if (homepage.trim() !== client.homepage_url) body.homepage_url = homepage.trim()
       if (description.trim() !== client.description) body.description = description.trim()
+      if (owner.trim() !== client.owner) body.owner = owner.trim()
       if (redirects.join("\n") !== client.redirect_urls.join("\n")) body.redirect_urls = redirects
       if (!sameSet(bindings, client.required_bindings)) body.required_bindings = bindings
       if (isPrivate !== client.is_private) body.is_private = isPrivate
@@ -368,6 +372,15 @@ export function ClientDetail({
                   placeholder="一句话说明这个应用做什么"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="block text-[12px] text-muted-foreground">负责人</span>
+                <Input
+                  className="mt-1 h-9 max-w-[360px]"
+                  placeholder="姓名或部门，展示在授权页面"
+                  value={owner}
+                  onChange={(event) => setOwner(event.target.value)}
                 />
               </label>
             </div>

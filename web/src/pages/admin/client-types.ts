@@ -12,6 +12,7 @@ export type Client = {
   logo_url: string
   homepage_url: string
   description: string
+  owner: string
   is_public: boolean
   is_private: boolean
   enabled: boolean
