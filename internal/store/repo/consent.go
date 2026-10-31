@@ -20,17 +20,7 @@ func NewConsentRepo(db *gorm.DB) *ConsentRepo {
 }
 
 func (r *ConsentRepo) Scopes(ctx context.Context, userID, clientID string) ([]string, error) {
-	var scopes []string
-	err := r.db.WithContext(ctx).Model(&model.Consent{}).
-		Where("user_id = ? AND client_id = ?", userID, clientID).
-		Pluck("scopes", &scopes).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("repo: 查询授权记录 %s/%s: %w", userID, clientID, err)
-	}
-	return scopes, nil
+	return r.load(ctx, userID, clientID)
 }
 
 // Grant 写入或合并用户对应用的授权 scope。
