@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
 
+import { Button } from "@/components/ui/button"
+import { Modal } from "@/components/ui/modal"
 import { cn } from "@/lib/utils"
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -104,3 +106,72 @@ export function Empty({ children }: { children: ReactNode }) {
 
 export const thClass = "px-6 py-2.5 text-left text-[12px] font-normal text-muted-foreground"
 export const tdClass = "px-6 py-3 text-[13px] border-t border-border"
+
+export function Select({
+  value,
+  onChange,
+  className,
+  children,
+}: {
+  value: string
+  onChange: (value: string) => void
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={cn(
+        "h-9 rounded-md border border-border bg-card px-2.5 text-[12.5px] text-foreground outline-none",
+        "focus:border-primary/50 focus:ring-[3px] focus:ring-primary/10",
+        className,
+      )}
+    >
+      {children}
+    </select>
+  )
+}
+
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel = "确认",
+  danger,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean
+  title: string
+  message: string
+  confirmLabel?: string
+  danger?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <Modal
+      open={open}
+      title={title}
+      onClose={onCancel}
+      width="max-w-[420px]"
+      footer={
+        <>
+          <Button variant="outline" className="h-8 w-auto px-3.5" onClick={onCancel}>
+            取消
+          </Button>
+          <Button
+            variant={danger ? "destructive" : "default"}
+            className="h-8 w-auto px-3.5"
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13px] leading-[1.7] whitespace-pre-line text-muted-foreground">{message}</p>
+    </Modal>
+  )
+}

@@ -60,11 +60,28 @@ func (r *UserRepo) TouchLogin(ctx context.Context, id string, at time.Time) erro
 	return nil
 }
 
-func (r *UserRepo) List(ctx context.Context, keyword string, limit int) ([]model.User, error) {
-	query := r.db.WithContext(ctx).Order("id").Limit(limit)
-	if keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("id LIKE ? OR name LIKE ?", like, like)
+type UserFilter struct {
+	Keyword string
+	Type    *int16
+	Status  *int16
+	GroupID uint64
+}
+
+func (r *UserRepo) List(ctx context.Context, filter UserFilter, limit int) ([]model.User, error) {
+	query := r.db.WithContext(ctx).Model(&model.User{}).Order("users.id").Limit(limit)
+	if filter.Keyword != "" {
+		like := "%" + filter.Keyword + "%"
+		query = query.Where("users.id LIKE ? OR users.name LIKE ?", like, like)
+	}
+	if filter.Type != nil {
+		query = query.Where("users.type = ?", *filter.Type)
+	}
+	if filter.Status != nil {
+		query = query.Where("users.status = ?", *filter.Status)
+	}
+	if filter.GroupID > 0 {
+		members := r.db.Model(&model.UserGroup{}).Select("user_id").Where("group_id = ?", filter.GroupID)
+		query = query.Where("users.id IN (?)", members)
 	}
 
 	var users []model.User

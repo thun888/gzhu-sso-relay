@@ -54,8 +54,8 @@ type groupPatch struct {
 	ParentID *uint64 `json:"parent_id"`
 }
 
-type membersPayload struct {
-	UserIDs []string `json:"user_ids"`
+type memberPayload struct {
+	UserID string `json:"user_id" binding:"required"`
 }
 
 func (h *Admin) ListUsers(c *gin.Context) {
@@ -66,7 +66,26 @@ func (h *Admin) ListUsers(c *gin.Context) {
 		}
 	}
 
-	users, err := h.users.List(c.Request.Context(), strings.TrimSpace(c.Query("q")), limit)
+	filter := repo.UserFilter{Keyword: strings.TrimSpace(c.Query("q"))}
+	if raw := c.Query("type"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			value := int16(n)
+			filter.Type = &value
+		}
+	}
+	if raw := c.Query("status"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			value := int16(n)
+			filter.Status = &value
+		}
+	}
+	if raw := c.Query("group_id"); raw != "" {
+		if n, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			filter.GroupID = n
+		}
+	}
+
+	users, err := h.users.List(c.Request.Context(), filter, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用户失败"})
 		return
@@ -167,14 +186,19 @@ func (h *Admin) PatchGroup(c *gin.Context) {
 		return
 	}
 
-	if req.Name != nil || req.Code != nil {
+	if req.Code != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标识创建后不可修改"})
+		return
+	}
+
+	if req.Name != nil {
 		group, err := h.groups.ByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
 			return
 		}
 		if group.IsUpstream {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不能修改名称与标识"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不能修改名称"})
 			return
 		}
 	}
@@ -182,9 +206,6 @@ func (h *Admin) PatchGroup(c *gin.Context) {
 	fields := map[string]any{}
 	if req.Name != nil {
 		fields["name"] = *req.Name
-	}
-	if req.Code != nil {
-		fields["code"] = *req.Code
 	}
 	if req.ParentID != nil {
 		if *req.ParentID == 0 {
@@ -230,21 +251,21 @@ func (h *Admin) GroupMembers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	members, err := h.groups.Members(c.Request.Context(), id)
+	members, err := h.groups.MemberViews(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询成员失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"user_ids": members})
+	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
-func (h *Admin) SetGroupMembers(c *gin.Context) {
+func (h *Admin) AddGroupMember(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
 		return
 	}
 
-	var req membersPayload
+	var req memberPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式不正确"})
 		return
@@ -260,34 +281,47 @@ func (h *Admin) SetGroupMembers(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不支持手工维护成员"})
 		return
 	}
-	unique := make([]string, 0, len(req.UserIDs))
-	seen := make(map[string]struct{}, len(req.UserIDs))
-	for _, uid := range req.UserIDs {
-		if uid = strings.TrimSpace(uid); uid == "" {
-			continue
-		}
-		if _, dup := seen[uid]; dup {
-			continue
-		}
-		seen[uid] = struct{}{}
-		unique = append(unique, uid)
+
+	userID := strings.TrimSpace(req.UserID)
+	if _, err := h.users.ByID(ctx, userID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "用户不存在"})
+		return
+	}
+	if err := h.groups.AddMember(ctx, id, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加成员失败"})
+		return
 	}
 
-	missing, err := h.users.MissingUsers(ctx, unique)
+	members, err := h.groups.MemberViews(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "校验成员失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询成员失败"})
 		return
 	}
-	if len(missing) > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "以下用户不存在", "user_ids": missing})
+	c.JSON(http.StatusOK, gin.H{"members": members})
+}
+
+func (h *Admin) RemoveGroupMember(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
 		return
 	}
 
-	if err := h.groups.SetMembers(ctx, id, unique); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置成员失败"})
+	ctx := c.Request.Context()
+	group, err := h.groups.ByID(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"user_ids": unique})
+	if group.IsUpstream {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不支持手工维护成员"})
+		return
+	}
+
+	if err := h.groups.RemoveMember(ctx, id, c.Param("user_id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "移除成员失败"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func pathID(c *gin.Context) (uint64, bool) {

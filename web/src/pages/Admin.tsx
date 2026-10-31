@@ -63,20 +63,18 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
           ))}
         </nav>
 
-        <div className="border-t border-border p-3">
-          <a
-            href="/"
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            返回用户中心
-          </a>
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
-          <h1 className="text-[14px] font-medium text-foreground">{current.label}管理</h1>
-          <span className="text-[12px] text-muted-foreground">管理后台</span>
+          <div className="flex items-center gap-2 text-[13px]">
+            <span className="text-muted-foreground">管理后台</span>
+            <span className="text-muted-foreground/40">/</span>
+            <h1 className="font-medium text-foreground">{current.label}管理</h1>
+          </div>
+          <a href="/" className="text-[12.5px] text-muted-foreground hover:text-foreground">
+            返回用户中心
+          </a>
         </header>
 
         <main className="min-w-0 flex-1 p-6">

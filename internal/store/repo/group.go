@@ -85,22 +85,43 @@ func (r *GroupRepo) Members(ctx context.Context, groupID uint64) ([]string, erro
 	return ids, nil
 }
 
-func (r *GroupRepo) SetMembers(ctx context.Context, groupID uint64, userIDs []string) error {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("group_id = ?", groupID).Delete(&model.UserGroup{}).Error; err != nil {
-			return err
-		}
-		if len(userIDs) == 0 {
-			return nil
-		}
-		links := make([]model.UserGroup, 0, len(userIDs))
-		for _, id := range userIDs {
-			links = append(links, model.UserGroup{UserID: id, GroupID: groupID})
-		}
-		return tx.Create(&links).Error
-	})
+type MemberView struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	Status int16  `json:"status"`
+}
+
+func (r *GroupRepo) MemberViews(ctx context.Context, groupID uint64) ([]MemberView, error) {
+	var members []MemberView
+	err := r.db.WithContext(ctx).
+		Table("user_groups").
+		Select("users.id, users.name, users.email, users.status").
+		Joins("JOIN users ON users.id = user_groups.user_id").
+		Where("user_groups.group_id = ?", groupID).
+		Order("users.id").
+		Scan(&members).Error
 	if err != nil {
-		return fmt.Errorf("repo: 设置用户组 %d 的成员: %w", groupID, err)
+		return nil, fmt.Errorf("repo: 列出用户组 %d 的成员: %w", groupID, err)
+	}
+	return members, nil
+}
+
+func (r *GroupRepo) AddMember(ctx context.Context, groupID uint64, userID string) error {
+	link := model.UserGroup{UserID: userID, GroupID: groupID}
+	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&link).Error
+	if err != nil {
+		return fmt.Errorf("repo: 把 %s 加入用户组 %d: %w", userID, groupID, err)
+	}
+	return nil
+}
+
+func (r *GroupRepo) RemoveMember(ctx context.Context, groupID uint64, userID string) error {
+	err := r.db.WithContext(ctx).
+		Where("group_id = ? AND user_id = ?", groupID, userID).
+		Delete(&model.UserGroup{}).Error
+	if err != nil {
+		return fmt.Errorf("repo: 把 %s 移出用户组 %d: %w", userID, groupID, err)
 	}
 	return nil
 }
