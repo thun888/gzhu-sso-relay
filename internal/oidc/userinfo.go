@@ -27,6 +27,12 @@ func (p *Provider) UserInfo(c *gin.Context) {
 		return
 	}
 
+	revoked, err := p.revoked.Revoked(c.Request.Context(), strings.TrimSpace(raw))
+	if err != nil || revoked {
+		unauthorized(c)
+		return
+	}
+
 	sub, _ := claims["sub"].(string)
 	scope, _ := claims["scope"].(string)
 

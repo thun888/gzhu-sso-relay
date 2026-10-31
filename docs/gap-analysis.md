@@ -38,9 +38,9 @@
 | --- | --- | --- | --- |
 | 授权码流程 | 有 | 全都有 | 达标 |
 | PKCE | S256 + plain，公开客户端强制 | Keycloak/Auth0/Logto 强制 S256，不推荐 plain | 建议禁 plain |
-| refresh_token | **无** | Keycloak/Logto/Casdoor/Hydra/Auth0 全有；Dex 用 `offline_access` | **最大缺口**。1 小时后必须回浏览器重新授权，移动端与长会话 SPA 无法接受 |
-| offline_access scope | 无 | 同上 | 同上 |
-| token revocation（RFC 7009） | 无 | Hydra/Keycloak/Logto/Casdoor 均有 | 应用侧无法主动吊销泄露令牌 |
+| refresh_token | 有，30 天，每次刷新轮转 | Keycloak/Logto/Casdoor/Hydra/Auth0 全有；Dex 用 `offline_access` | 已补齐，长会话应用不必回浏览器重新授权 |
+| offline_access scope | 无，所有授权都发 refresh token | 同上 | 与主流实现不同：没有"只在申请 offline_access 时才发"的开关，短会话应用也会拿到 30 天的凭据 |
+| token revocation（RFC 7009） | 有，refresh token 直接删除，access token 记入撤销列表 | Hydra/Keycloak/Logto/Casdoor 均有 | 已补齐；access token 撤销只影响 userinfo，离线验签的下游仍会放行 |
 | introspection（RFC 7662） | 无 | Hydra/Keycloak/Casdoor 有 | 资源服务只能离线验签，无法感知禁用 |
 | RP 发起登出（`end_session`） | 无 | Keycloak/Auth0/Logto/Casdoor 均支持，支持 `id_token_hint` + `post_logout_redirect_uri` | 用户从门户退出，应用里仍在线 |
 | 后端通道登出 | 无 | Keycloak、Authentik、Entra 支持 Back-Channel Logout 1.0 | 与上一条配套，缺了就是"假单点退出" |
@@ -60,7 +60,7 @@
 | LDAP / RADIUS 出口 | 无 | Keycloak、Authelia、CAS | 网络设备、老 B/S 系统可能需要 |
 | SCIM 2.0 用户同步 | 无 | Keycloak、Zitadel、Entra | 应用侧自动开号销号，避免离职账号残留 |
 
-**协议侧建议优先级**：refresh_token → end_session + back-channel → prompt/login_hint → groups claim → CAS 服务端 → SAML。前四项是"接进去能不能用"的问题，CAS/SAML 是"能不能全覆盖"的问题。
+**协议侧建议优先级**：end_session + back-channel → prompt/login_hint → groups claim → CAS 服务端 → SAML。前两项是"接进去能不能用"的问题，CAS/SAML 是"能不能全覆盖"的问题。
 
 ## 3. 令牌与会话生命周期
 
@@ -71,7 +71,7 @@
 | 签名密钥轮换 | 单密钥，换 key 即全量失效 | Keycloak 多 key 并存（active/passive），Auth0 自动轮换 | 平滑轮换能力缺失，是一次性运维事故点 |
 | 上下文会话 | Redis 单 token，固定 12h | Keycloak 区分 idle 与 max，支持 remember-me | 无空闲超时 |
 | 用户级会话索引 | **无**（只按 token 反查用户） | Keycloak 会话列表、Entra 撤销会话 | 无法"下线该用户全部设备"，禁用后旧会话仍活 12h |
-| 令牌撤销传播 | 无 | 撤销会话即失效 refresh token，back-channel 通知 RP | 与审计、合规直接相关 |
+| 令牌撤销传播 | 撤销 refresh token 生效，access token 需等过期 | 撤销会话即失效 refresh token，back-channel 通知 RP | 应用侧能主动吊销自己的令牌，但门户侧还缺通知下游的能力 |
 | 组变更生效 | 授权时检查，已发令牌不回收 | Keycloak 每次 token 请求重新算 claim | 跨组调岗后最长 1h 残留权限 |
 
 ## 4. 应用创建与治理
@@ -181,15 +181,15 @@
 
 ### P1 — 生态兼容（约 15–20 人日）
 
-1. refresh_token + rotation + 按 client 配 TTL。
-2. `end_session_endpoint`、`id_token_hint`、back-channel logout。
-3. `prompt` / `login_hint` / `max_age`。
-4. `groups` claim + 自定义 scope → claim 映射表（把 `scopes` 表扩成"scope → claim 表达式"）。
-5. 用户侧"已授权应用"列表与撤销。
-6. 审计表（登录、授权、管理操作三类事件）+ 管理后台查询。
-7. 多签名密钥并存与平滑轮换。
-8. 双 secret 过渡期轮换。
-9. 按 client 的"是否需要同意"开关。
+1. `end_session_endpoint`、`id_token_hint`、back-channel logout。
+2. `prompt` / `login_hint` / `max_age`。
+3. `groups` claim + 自定义 scope → claim 映射表（把 `scopes` 表扩成"scope → claim 表达式"）。
+4. 用户侧"已授权应用"列表与撤销。
+5. 审计表（登录、授权、管理操作三类事件）+ 管理后台查询。
+6. 多签名密钥并存与平滑轮换。
+7. 双 secret 过渡期轮换。
+8. 按 client 的"是否需要同意"开关。
+9. 按 client 配 refresh token TTL 与是否签发。
 10. OIDC 一致性测试（OpenID Foundation conformance suite）纳入 CI。
 
 ### P2 — 覆盖面与运营（约 30+ 人日）

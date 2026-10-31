@@ -205,7 +205,8 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | GET | `/.well-known/openid-configuration` | OIDC discovery |
 | GET | `/oidc/jwks` | 签名公钥 |
 | GET | `/oidc/authorize` | 授权端点 |
-| POST | `/oidc/token` | 令牌端点 |
+| POST | `/oidc/token` | 令牌端点，支持授权码与刷新令牌 |
+| POST | `/oidc/revoke` | 撤销令牌 |
 | GET | `/oidc/userinfo` | 用户信息端点 |
 | GET | `/api/public/config` | 登录页所需的公开配置 |
 | POST | `/api/login` | 登录 |

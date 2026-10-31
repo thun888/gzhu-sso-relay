@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -57,10 +58,18 @@ func (p *Provider) Token(c *gin.Context) {
 		return
 	}
 
-	if form.Get("grant_type") != "authorization_code" {
-		tokenError(c, http.StatusBadRequest, "unsupported_grant_type", "仅支持 authorization_code")
-		return
+	switch form.Get("grant_type") {
+	case "authorization_code":
+		p.exchangeCode(c, client, form)
+	case "refresh_token":
+		p.exchangeRefresh(c, client, form)
+	default:
+		tokenError(c, http.StatusBadRequest, "unsupported_grant_type", "仅支持 authorization_code 与 refresh_token")
 	}
+}
+
+func (p *Provider) exchangeCode(c *gin.Context, client *model.OAuthClient, form url.Values) {
+	ctx := c.Request.Context()
 
 	grant, err := p.codes.Peek(ctx, form.Get("code"))
 	if err != nil {
@@ -104,8 +113,90 @@ func (p *Provider) Token(c *gin.Context) {
 		return
 	}
 
+	p.issueTokens(c, client, user, grant.Scopes, grant.AuthTime, grant.Nonce)
+}
+
+func (p *Provider) exchangeRefresh(c *gin.Context, client *model.OAuthClient, form url.Values) {
+	ctx := c.Request.Context()
+	raw := form.Get("refresh_token")
+	if raw == "" {
+		tokenError(c, http.StatusBadRequest, "invalid_request", "缺少 refresh_token")
+		return
+	}
+
+	grant, err := p.refresh.Peek(ctx, raw)
+	if err != nil {
+		if errors.Is(err, ErrRefreshInvalid) {
+			tokenError(c, http.StatusBadRequest, "invalid_grant", "刷新令牌无效或已过期")
+			return
+		}
+		tokenError(c, http.StatusInternalServerError, "server_error", "刷新令牌状态不可用")
+		return
+	}
+	if grant.ClientID != client.ClientID {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "刷新令牌与客户端不匹配")
+		return
+	}
+
+	scopes := grant.Scopes
+	if requested := splitScope(form.Get("scope")); len(requested) > 0 {
+		if !scopeSubset(requested, grant.Scopes) {
+			tokenError(c, http.StatusBadRequest, "invalid_scope", "请求的 scope 超出原授权范围")
+			return
+		}
+		scopes = requested
+	}
+
+	user, err := p.users.ByID(ctx, grant.UserID)
+	if err != nil {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "用户不存在")
+		return
+	}
+	if user.Status == model.UserStatusDisabled {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "用户已被禁用")
+		return
+	}
+
+	permitted, err := p.clients.Allows(ctx, client, user.ID)
+	if err != nil {
+		tokenError(c, http.StatusInternalServerError, "server_error", "应用权限状态不可用")
+		return
+	}
+	if !permitted {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "用户已无权访问该应用")
+		return
+	}
+
+	previous, err := p.refresh.Consume(ctx, raw)
+	if err != nil {
+		if errors.Is(err, ErrRefreshInvalid) {
+			tokenError(c, http.StatusBadRequest, "invalid_grant", "刷新令牌无效或已使用")
+			return
+		}
+		tokenError(c, http.StatusInternalServerError, "server_error", "刷新令牌状态不可用")
+		return
+	}
+
+	p.issueTokens(c, client, user, scopes, previous.AuthTime, "")
+}
+
+// issueTokens 同时签发访问令牌、ID 令牌与刷新令牌，刷新令牌每次轮转。
+// 刷新路径不回传 nonce，OIDC Core 12.2 要求重新签发的 ID 令牌不带 nonce。
+func (p *Provider) issueTokens(c *gin.Context, client *model.OAuthClient, user *model.User, scopes []string, authTime int64, nonce string) {
+	ctx := c.Request.Context()
 	now := time.Now()
 	audience := []string{client.ClientID}
+
+	refreshToken, err := p.refresh.Issue(ctx, RefreshGrant{
+		UserID:   user.ID,
+		ClientID: client.ClientID,
+		Scopes:   scopes,
+		AuthTime: authTime,
+	})
+	if err != nil {
+		tokenError(c, http.StatusInternalServerError, "server_error", "签发刷新令牌失败")
+		return
+	}
 
 	accessToken, err := p.sign(jwt.MapClaims{
 		"iss":       p.Issuer,
@@ -113,7 +204,7 @@ func (p *Provider) Token(c *gin.Context) {
 		"aud":       audience,
 		"iat":       now.Unix(),
 		"exp":       now.Add(accessTokenTTL).Unix(),
-		"scope":     strings.Join(grant.Scopes, " "),
+		"scope":     strings.Join(scopes, " "),
 		"token_use": "access",
 	})
 	if err != nil {
@@ -126,13 +217,13 @@ func (p *Provider) Token(c *gin.Context) {
 		"aud":       audience,
 		"iat":       now.Unix(),
 		"exp":       now.Add(accessTokenTTL).Unix(),
-		"auth_time": grant.AuthTime,
+		"auth_time": authTime,
 	}
-	for key, value := range p.claimsFor(ctx, user, grant.Scopes) {
+	for key, value := range p.claimsFor(ctx, user, scopes) {
 		idClaims[key] = value
 	}
-	if grant.Nonce != "" {
-		idClaims["nonce"] = grant.Nonce
+	if nonce != "" {
+		idClaims["nonce"] = nonce
 	}
 
 	idToken, err := p.sign(idClaims)
@@ -143,11 +234,12 @@ func (p *Provider) Token(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{
-		"access_token": accessToken,
-		"token_type":   "Bearer",
-		"expires_in":   int(accessTokenTTL.Seconds()),
-		"id_token":     idToken,
-		"scope":        strings.Join(grant.Scopes, " "),
+		"access_token":  accessToken,
+		"token_type":    "Bearer",
+		"expires_in":    int(accessTokenTTL.Seconds()),
+		"id_token":      idToken,
+		"refresh_token": refreshToken,
+		"scope":         strings.Join(scopes, " "),
 	})
 }
 

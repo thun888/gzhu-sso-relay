@@ -31,11 +31,13 @@ type Provider struct {
 	users    *repo.UserRepo
 	groups   *repo.GroupRepo
 	sessions *session.Manager
-	codes     *CodeStore
-	consents  *repo.ConsentRepo
-	pending   *PendingStore
-	notifier  *notify.Notifier
-	limiter   *TokenLimiter
+	codes    *CodeStore
+	refresh  *RefreshStore
+	revoked  *RevokedStore
+	consents *repo.ConsentRepo
+	pending  *PendingStore
+	notifier *notify.Notifier
+	limiter  *TokenLimiter
 }
 
 type Options struct {
@@ -50,6 +52,8 @@ type Options struct {
 	Groups     *repo.GroupRepo
 	Sessions   *session.Manager
 	Codes      *CodeStore
+	Refresh    *RefreshStore
+	Revoked    *RevokedStore
 	Consents   *repo.ConsentRepo
 	Pending    *PendingStore
 	Notifier   *notify.Notifier
@@ -69,6 +73,8 @@ func New(opts Options) *Provider {
 		groups:     opts.Groups,
 		sessions:   opts.Sessions,
 		codes:      opts.Codes,
+		refresh:    opts.Refresh,
+		revoked:    opts.Revoked,
 		consents:   opts.Consents,
 		pending:    opts.Pending,
 		notifier:   opts.Notifier,

@@ -36,6 +36,7 @@ relay 对外提供标准 OIDC 授权码流程。应用只需要 discovery 地址
 | Discovery | `<issuer>/.well-known/openid-configuration` |
 | 授权 | `<issuer>/oidc/authorize` |
 | 令牌 | `<issuer>/oidc/token` |
+| 撤销 | `<issuer>/oidc/revoke` |
 | 用户信息 | `<issuer>/oidc/userinfo` |
 | JWKS | `<issuer>/oidc/jwks` |
 
@@ -44,11 +45,12 @@ discovery 声明的能力：
 | 项目 | 值 |
 | --- | --- |
 | `response_types_supported` | `code` |
-| `grant_types_supported` | `authorization_code` |
+| `grant_types_supported` | `authorization_code`、`refresh_token` |
 | `subject_types_supported` | `public` |
 | `id_token_signing_alg_values_supported` | `RS256` |
 | `scopes_supported` | `openid`、`profile`、`email`、`groups` |
 | `token_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
+| `revocation_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `code_challenge_methods_supported` | `S256`、`plain` |
 
 ## 授权码流程
@@ -133,13 +135,32 @@ client_id=gitea&client_secret=<secret>
   "token_type": "Bearer",
   "expires_in": 3600,
   "id_token": "<JWT>",
+  "refresh_token": "<不透明字符串>",
   "scope": "openid profile email"
 }
 ```
 
-没有 `refresh_token`。access token 与 id token 的有效期都是 1 小时。
+access token 与 id token 的有效期都是 1 小时，refresh token 有效期 30 天。
 
-### 3. 获取用户信息
+### 3. 刷新令牌
+
+```http
+POST <issuer>/oidc/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+grant_type=refresh_token&
+refresh_token=<上一轮返回的刷新令牌>&
+scope=<可选，只能缩小范围>
+```
+
+响应与换取令牌相同，携带一组全新的 `access_token`、`id_token` 与 `refresh_token`。
+
+刷新令牌每次使用后立即作废，客户端必须用响应里的新值替换旧值。重复提交同一个刷新令牌会返回 `invalid_grant`，需要重新走授权流程。
+
+刷新时会重新检查用户是否被禁用、是否仍在应用的用户组范围内，任一不满足都返回 `invalid_grant`。
+
+### 4. 获取用户信息
 
 ```http
 GET <issuer>/oidc/userinfo
@@ -167,6 +188,23 @@ WWW-Authenticate: Bearer error="invalid_token"
 ```
 
 只接受 access token。携带 `id_token` 会因 `token_use` 不是 `access` 而被拒绝。
+
+### 5. 撤销令牌
+
+```http
+POST <issuer>/oidc/revoke
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+token=<access_token 或 refresh_token>&
+token_type_hint=<access_token 或 refresh_token，可选>
+```
+
+`refresh_token` 直接从存储中删除；`access_token` 登记到撤销列表，直到它原本的过期时间。撤销后的 access token 调用 userinfo 返回 401。
+
+只要客户端凭据有效，即使 token 不存在或不属于该客户端也返回 `200`，这是 RFC 7009 的要求，避免端点被用来探测令牌有效性。
+
+撤销只对 relay 自身生效。下游如果离线验签自行解析 JWT，在过期前仍会接受这个 token，需要即时失效时请调用 userinfo。
 
 ## scope 与 claims
 
@@ -216,7 +254,18 @@ WWW-Authenticate: Bearer error="invalid_token"
 | `token_use` | 固定 `access` |
 | `iat`、`exp` | 有效期 1 小时 |
 
-access token 是自包含 JWT，资源服务可以离线校验签名与过期时间，也可以调用 userinfo 获取最新身份。离线校验无法感知用户禁用，需要即时生效时应调用 userinfo。
+access token 是自包含 JWT，资源服务可以离线校验签名与过期时间，也可以调用 userinfo 获取最新身份。离线校验无法感知用户禁用与令牌撤销，需要即时生效时应调用 userinfo。
+
+### Refresh Token
+
+| 属性 | 说明 |
+| --- | --- |
+| 形态 | 32 字节随机数的不透明字符串，不含用户信息 |
+| 有效期 | 30 天，每次刷新重新计时 |
+| 轮转 | 每次换取令牌后旧值立即失效 |
+| 归属 | 只能由签发它的客户端使用 |
+
+relay 不保存 refresh token 的签发记录到数据库，只存在 Redis 中，重启不丢失但清理 Redis 会导致所有客户端需要重新授权。
 
 ### 缓存建议
 
@@ -256,12 +305,15 @@ access token 是自包含 JWT，资源服务可以离线校验签名与过期时
 
 | error | HTTP | 原因 |
 | --- | --- | --- |
-| `invalid_request` | 400 | 表单无法解析 |
+| `invalid_request` | 400 | 表单无法解析，或缺少 `refresh_token` |
 | `invalid_client` | 401 | 缺少凭据、客户端不存在或密钥错误 |
-| `unsupported_grant_type` | 400 | 不是 `authorization_code` |
-| `invalid_grant` | 400 | 授权码无效、已被使用、过期、与客户端或回调不匹配、PKCE 失败、用户被禁用 |
+| `unsupported_grant_type` | 400 | 不是 `authorization_code` 或 `refresh_token` |
+| `invalid_grant` | 400 | 授权码或刷新令牌无效、已被使用、与客户端不匹配；PKCE 失败；用户被禁用或已无权访问该应用 |
+| `invalid_scope` | 400 | 刷新时申请的 scope 超出原授权范围 |
 | `too_many_requests` | 429 | 同一来源短时间内失败次数过多，等 5 分钟后重试 |
 | `server_error` | 500 | 签发令牌失败 |
+
+撤销端点只在客户端凭据错误时返回 `invalid_client`，其余情况一律 200。
 
 ## 接入示例
 
@@ -292,21 +344,32 @@ curl -s -u gitea:<client_secret> \
 # 3. 读取用户信息
 curl -s -H "Authorization: Bearer <access_token>" \
   https://sso.example.edu.cn/oidc/userinfo
+
+# 4. 刷新令牌
+curl -s -u gitea:<client_secret> \
+  -d grant_type=refresh_token \
+  -d refresh_token=<refresh_token> \
+  https://sso.example.edu.cn/oidc/token
+
+# 5. 撤销令牌
+curl -s -u gitea:<client_secret> \
+  -d token=<refresh_token> \
+  https://sso.example.edu.cn/oidc/revoke
 ```
 
 ## 能力边界
 
 | 项目 | 现状 |
 | --- | --- |
-| 授权模式 | 仅 authorization code |
-| 刷新令牌 | 不支持；令牌过期后重新走 authorize，已有会话时无需再次输入密码 |
+| 授权模式 | authorization code 与 refresh token |
+| 刷新令牌 | 支持，有效期 30 天，每次刷新轮转，旧值立即作废 |
 | PKCE | 支持 `S256` 与 `plain`；公开客户端强制 |
-| 令牌撤销 | 不提供 revocation 端点 |
+| 令牌撤销 | 支持 RFC 7009，refresh token 立即删除，access token 进入撤销列表直到过期 |
 | 令牌自省 | 不提供 introspection 端点 |
 | 单点退出 | 不提供 end_session 端点 |
 | 动态注册 | 不支持，应用需在管理后台创建 |
-| 自定义 scope | 当前只内置 `openid`、`profile`、`email`，新增 scope 不会产生额外 claim |
-| 用户组与绑定 | 每次授权重新检查，已签发令牌不受影响 |
+| 自定义 scope | 当前只内置 `openid`、`profile`、`email`、`groups`，新增 scope 不会产生额外 claim |
+| 用户组与绑定 | 每次授权与刷新都重新检查，已签发的 access token 不受影响 |
 | 应用停用 | 管理后台可停用应用，停用后授权与换取令牌都返回 `unauthorized_client`，配置与授权记录保留 |
 
 ## 上线检查清单
@@ -317,4 +380,5 @@ curl -s -H "Authorization: Bearer <access_token>" \
 - [ ] 申请了 `openid`，需要姓名时加 `profile`，需要邮箱时加 `email`，需要按组判断权限时加 `groups`。
 - [ ] 公开客户端启用 PKCE，使用 `S256`。
 - [ ] 下游校验 `iss`、`aud`、`exp`，并通过 JWKS 校验签名。
-- [ ] 令牌过期后重新发起授权，不依赖 refresh token。
+- [ ] 刷新令牌按可长期保存的凭据对待，每次刷新后覆盖旧值。
+- [ ] 登出或检测到令牌泄露时调用 `/oidc/revoke`，不要只依赖过期时间。

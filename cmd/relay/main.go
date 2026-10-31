@@ -126,6 +126,8 @@ func run() error {
 		From:     cfg.SMTP.From,
 	}), repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
 
+	refresh := oidc.NewRefreshStore(rdb)
+
 	provider := oidc.New(oidc.Options{
 		Issuer:     cfg.Server.BaseURL,
 		LoginURL:   cfg.Server.LoginURL,
@@ -140,6 +142,8 @@ func run() error {
 		Groups:     groups,
 		Sessions:   sessions,
 		Codes:      oidc.NewCodeStore(rdb),
+		Refresh:    refresh,
+		Revoked:    oidc.NewRevokedStore(rdb),
 		Notifier:   notifier,
 		Limiter:    oidc.NewTokenLimiter(rdb),
 	})
@@ -158,6 +162,7 @@ func run() error {
 	router.GET("/oidc/jwks", provider.JWKS)
 	router.GET("/oidc/authorize", provider.Authorize)
 	router.POST("/oidc/token", provider.Token)
+	router.POST("/oidc/revoke", provider.Revoke)
 	router.GET("/oidc/userinfo", provider.UserInfo)
 	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy))
 	router.POST("/api/login", authHandler.Login)
@@ -170,7 +175,7 @@ func run() error {
 	router.DELETE("/api/bindings/:provider", authHandler.RequireUser(), accountHandler.Unbind)
 	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
-	adminHandler := httpapi.NewAdmin(users, groups, sessions)
+	adminHandler := httpapi.NewAdmin(users, groups, sessions, refresh)
 	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry, logos)
 	router.GET("/api/clients/:id/logo", adminClients.Logo)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())

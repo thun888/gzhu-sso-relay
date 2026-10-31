@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/oidc"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
@@ -16,10 +17,11 @@ type Admin struct {
 	users    *repo.UserRepo
 	groups   *repo.GroupRepo
 	sessions *session.Manager
+	refresh  *oidc.RefreshStore
 }
 
-func NewAdmin(users *repo.UserRepo, groups *repo.GroupRepo, sessions *session.Manager) *Admin {
-	return &Admin{users: users, groups: groups, sessions: sessions}
+func NewAdmin(users *repo.UserRepo, groups *repo.GroupRepo, sessions *session.Manager, refresh *oidc.RefreshStore) *Admin {
+	return &Admin{users: users, groups: groups, sessions: sessions, refresh: refresh}
 }
 
 type adminUserView struct {
@@ -135,10 +137,14 @@ func (h *Admin) PatchUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户失败"})
 		return
 	}
-	// 禁用后立即失效该用户所有会话，否则旧会话还能继续访问用户中心。
+	// 禁用后立即失效该用户所有会话与刷新令牌，否则重新启用时旧凭据会复活。
 	if req.Status != nil && *req.Status == model.UserStatusDisabled {
 		if _, err := h.sessions.RevokeAll(c.Request.Context(), c.Param("id")); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "账号已禁用，但清理会话失败"})
+			return
+		}
+		if _, err := h.refresh.RevokeUser(c.Request.Context(), c.Param("id")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "账号已禁用，但清理刷新令牌失败"})
 			return
 		}
 	}
