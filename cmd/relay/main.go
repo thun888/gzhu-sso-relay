@@ -81,6 +81,7 @@ func run() error {
 	authService := auth.NewService(auth.Options{
 		Users:    users,
 		Accounts: accounts,
+		Groups:   groups,
 		Sessions: sessions,
 		Throttle: auth.NewThrottle(rdb),
 		Upstream: auth.Upstream{

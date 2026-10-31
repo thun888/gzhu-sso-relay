@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"strings"
 	"time"
 
 	"github.com/thun888/gzhu-sso-relay/internal/config"
@@ -35,6 +36,7 @@ type Upstream struct {
 type Service struct {
 	users        *repo.UserRepo
 	accounts     *repo.AccountRepo
+	groups       *repo.GroupRepo
 	sessions     *session.Manager
 	throttle     *Throttle
 	upstream     Upstream
@@ -44,6 +46,7 @@ type Service struct {
 type Options struct {
 	Users        *repo.UserRepo
 	Accounts     *repo.AccountRepo
+	Groups       *repo.GroupRepo
 	Sessions     *session.Manager
 	Throttle     *Throttle
 	Upstream     Upstream
@@ -54,6 +57,7 @@ func NewService(opts Options) *Service {
 	return &Service{
 		users:        opts.Users,
 		accounts:     opts.Accounts,
+		groups:       opts.Groups,
 		sessions:     opts.Sessions,
 		throttle:     opts.Throttle,
 		upstream:     opts.Upstream,
@@ -94,7 +98,7 @@ func (s *Service) Login(ctx context.Context, id, password string) (*Result, erro
 	}
 	user.PasswordHash = hash
 
-	if err := s.accounts.SaveProfile(ctx, id, repo.UpstreamProvider, profile.Sub, profile); err != nil {
+	if err := s.saveUpstreamProfile(ctx, id, profile); err != nil {
 		return nil, err
 	}
 
@@ -144,11 +148,38 @@ func (s *Service) provision(ctx context.Context, id, password string) (*Result, 
 	if err := s.users.Create(ctx, user); err != nil {
 		return nil, err
 	}
-	if err := s.accounts.SaveProfile(ctx, id, repo.UpstreamProvider, profile.Sub, profile); err != nil {
+	if err := s.saveUpstreamProfile(ctx, id, profile); err != nil {
 		return nil, err
 	}
 
 	return s.issue(ctx, user)
+}
+
+// saveUpstreamProfile 落库上游快照并重建同步组，只在真正访问过上游后调用。
+func (s *Service) saveUpstreamProfile(ctx context.Context, userID string, profile portal.Profile) error {
+	if err := s.accounts.SaveProfile(ctx, userID, repo.UpstreamProvider, profile.Sub, profile); err != nil {
+		return err
+	}
+	return s.groups.SyncUpstream(ctx, userID, upstreamGroups(profile))
+}
+
+func upstreamGroups(profile portal.Profile) []repo.GroupSpec {
+	specs := make([]repo.GroupSpec, 0, 3)
+	for _, item := range []struct {
+		prefix string
+		value  string
+	}{
+		{"user_type", profile.UserType},
+		{"unit", profile.Unit},
+		{"major", profile.Major},
+	} {
+		value := strings.TrimSpace(item.value)
+		if value == "" {
+			continue
+		}
+		specs = append(specs, repo.GroupSpec{Code: item.prefix + ":" + value, Name: value})
+	}
+	return specs
 }
 
 func (s *Service) issue(ctx context.Context, user *model.User) (*Result, error) {

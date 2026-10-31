@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
@@ -115,4 +116,45 @@ func (r *GroupRepo) OfUser(ctx context.Context, userID string) ([]model.Group, e
 		return nil, fmt.Errorf("repo: 查询用户 %s 的用户组: %w", userID, err)
 	}
 	return groups, nil
+}
+
+type GroupSpec struct {
+	Code string
+	Name string
+}
+
+// SyncUpstream 用上游身份信息重建用户的同步组，手工维护的组不受影响。
+func (r *GroupRepo) SyncUpstream(ctx context.Context, userID string, specs []GroupSpec) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ids := make([]uint64, 0, len(specs))
+		for _, spec := range specs {
+			group := model.Group{Name: spec.Name, Code: spec.Code, Source: model.GroupSourceUpstream}
+			err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "code"}},
+				DoUpdates: clause.AssignmentColumns([]string{"name", "updated_at"}),
+			}).Create(&group).Error
+			if err != nil {
+				return err
+			}
+			ids = append(ids, group.ID)
+		}
+
+		upstream := tx.Model(&model.Group{}).Select("id").Where("source = ?", model.GroupSourceUpstream)
+		if err := tx.Where("user_id = ? AND group_id IN (?)", userID, upstream).Delete(&model.UserGroup{}).Error; err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+
+		links := make([]model.UserGroup, 0, len(ids))
+		for _, id := range ids {
+			links = append(links, model.UserGroup{UserID: userID, GroupID: id})
+		}
+		return tx.Create(&links).Error
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 同步用户 %s 的上游用户组: %w", userID, err)
+	}
+	return nil
 }

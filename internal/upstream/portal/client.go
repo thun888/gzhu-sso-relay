@@ -19,11 +19,14 @@ const (
 
 var ErrProfileUnavailable = errors.New("portal: 未取到 MOBILE，无法确定身份")
 
-// Profile 是上游返回中本系统保留的字段，其余（单位、专业、类别）不进入 claims。
+// Profile 是上游返回中本系统保留的字段。UserType、Unit、Major 只用于生成用户组，不进 claims。
 type Profile struct {
-	Sub   string `json:"sub"`
-	Name  string `json:"name"`
-	Class string `json:"belong_class"`
+	Sub      string `json:"sub"`
+	Name     string `json:"name"`
+	Class    string `json:"belong_class"`
+	UserType string `json:"user_type"`
+	Unit     string `json:"unit_name"`
+	Major    string `json:"major"`
 }
 
 type Client struct {
@@ -94,6 +97,9 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 		Mobile      string `json:"MOBILE"`
 		UserName    string `json:"USER_NAME"`
 		BelongClass string `json:"BELONG_CLASS"`
+		UserType    string `json:"USER_TYPE"`
+		UnitName    string `json:"UNIT_NAME"`
+		BelongMajor string `json:"BELONG_MAJOR"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return Profile{}, fmt.Errorf("portal: 解析用户信息: %w: %.120s", err, body)
@@ -103,9 +109,12 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 	}
 
 	return Profile{
-		Sub:   raw.Mobile,
-		Name:  raw.UserName,
-		Class: raw.BelongClass,
+		Sub:      raw.Mobile,
+		Name:     raw.UserName,
+		Class:    raw.BelongClass,
+		UserType: raw.UserType,
+		Unit:     raw.UnitName,
+		Major:    raw.BelongMajor,
 	}, nil
 }
 

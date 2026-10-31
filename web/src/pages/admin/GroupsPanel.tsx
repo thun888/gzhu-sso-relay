@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Empty, FormRow, Panel, api } from "./shared"
 
-type Group = { id: number; name: string; code: string; parent_id?: number | null }
+type Group = {
+  id: number
+  name: string
+  code: string
+  source: string
+  parent_id?: number | null
+}
 
 export function GroupsPanel({ onError }: { onError: (message: string) => void }) {
   const [groups, setGroups] = useState<Group[]>([])
@@ -84,7 +90,10 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
 
   return (
     <div className="space-y-5">
-      <Panel title="新建用户组" description="用户组用于控制哪些人可以访问哪些应用">
+      <Panel
+        title="新建用户组"
+        description="这里创建的是手工维护的用户组；上游用户组在登录时自动生成并同步成员"
+      >
         <FormRow label="组名">
           <Input
             className="h-9 max-w-[320px]"
@@ -118,18 +127,29 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
             <div key={group.id}>
               <div className="flex items-center justify-between gap-4 px-6 py-3">
                 <div className="min-w-0">
-                  <div className="text-[13px] text-foreground">{group.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] text-foreground">{group.name}</span>
+                    {group.source === "upstream" && (
+                      <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        上游同步
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-0.5 font-mono text-[12px] text-muted-foreground">
                     {group.code}
                   </div>
                 </div>
                 <div className="flex items-center gap-4 whitespace-nowrap">
-                  <button
-                    className="text-[12.5px] text-primary hover:underline"
-                    onClick={() => openMembers(group.id)}
-                  >
-                    {editing === group.id ? "收起" : "成员"}
-                  </button>
+                  {group.source === "upstream" ? (
+                    <span className="text-[12.5px] text-muted-foreground">成员随登录同步</span>
+                  ) : (
+                    <button
+                      className="text-[12.5px] text-primary hover:underline"
+                      onClick={() => openMembers(group.id)}
+                    >
+                      {editing === group.id ? "收起" : "成员"}
+                    </button>
+                  )}
                   <button
                     className="text-[12.5px] text-muted-foreground hover:underline"
                     onClick={() => remove(group.id)}

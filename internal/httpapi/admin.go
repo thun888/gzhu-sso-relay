@@ -33,6 +33,7 @@ type groupView struct {
 	ID       uint64  `json:"id"`
 	Name     string  `json:"name"`
 	Code     string  `json:"code"`
+	Source   string  `json:"source"`
 	ParentID *uint64 `json:"parent_id"`
 }
 
@@ -125,7 +126,7 @@ func (h *Admin) ListGroups(c *gin.Context) {
 
 	out := make([]groupView, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, groupView{ID: g.ID, Name: g.Name, Code: g.Code, ParentID: g.ParentID})
+		out = append(out, groupView{ID: g.ID, Name: g.Name, Code: g.Code, Source: g.Source, ParentID: g.ParentID})
 	}
 	c.JSON(http.StatusOK, gin.H{"groups": out})
 }
@@ -145,13 +146,13 @@ func (h *Admin) CreateGroup(c *gin.Context) {
 		}
 	}
 
-	group := model.Group{Name: req.Name, Code: req.Code, ParentID: req.ParentID}
+	group := model.Group{Name: req.Name, Code: req.Code, Source: model.GroupSourceLocal, ParentID: req.ParentID}
 	if err := h.groups.Create(ctx, &group); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "创建用户组失败，code 可能已存在"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, groupView{ID: group.ID, Name: group.Name, Code: group.Code, ParentID: group.ParentID})
+	c.JSON(http.StatusCreated, groupView{ID: group.ID, Name: group.Name, Code: group.Code, Source: group.Source, ParentID: group.ParentID})
 }
 
 func (h *Admin) PatchGroup(c *gin.Context) {
@@ -164,6 +165,18 @@ func (h *Admin) PatchGroup(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式不正确"})
 		return
+	}
+
+	if req.Name != nil || req.Code != nil {
+		group, err := h.groups.ByID(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
+			return
+		}
+		if group.Source == model.GroupSourceUpstream {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不能修改名称与标识"})
+			return
+		}
 	}
 
 	fields := map[string]any{}
@@ -238,6 +251,15 @@ func (h *Admin) SetGroupMembers(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	group, err := h.groups.ByID(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
+		return
+	}
+	if group.Source == model.GroupSourceUpstream {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不支持手工维护成员"})
+		return
+	}
 	unique := make([]string, 0, len(req.UserIDs))
 	seen := make(map[string]struct{}, len(req.UserIDs))
 	for _, uid := range req.UserIDs {
