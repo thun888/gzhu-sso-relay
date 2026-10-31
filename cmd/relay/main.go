@@ -122,6 +122,7 @@ func run() error {
 		Port:     cfg.SMTP.Port,
 		Username: cfg.SMTP.Username,
 		Password: cfg.SMTP.Password,
+		FromName: cfg.SMTP.FromName,
 		From:     cfg.SMTP.From,
 	}), repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
 

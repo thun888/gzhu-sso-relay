@@ -62,6 +62,8 @@ smtp:
   port: 587
   username: ""
   password: ""
+  # 发件人显示名，留空则只显示邮箱地址
+  from_name: "统一身份认证"
   from: "noreply@gzhu.edu.cn"
 
 # 极验行为验证。默认只在某个 IP 登录失败后，fail_window 内要求验证码；

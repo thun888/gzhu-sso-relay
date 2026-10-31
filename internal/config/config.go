@@ -29,6 +29,7 @@ type SMTP struct {
 	Port     int    `yaml:"port"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+	FromName string `yaml:"from_name"`
 	From     string `yaml:"from"`
 }
 

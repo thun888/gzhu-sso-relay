@@ -16,6 +16,7 @@ type Config struct {
 	Port     int
 	Username string
 	Password string
+	FromName string
 	From     string
 }
 
@@ -24,11 +25,12 @@ type Sender struct {
 	port     int
 	username string
 	password string
+	fromName string
 	from     string
 }
 
 func NewSender(cfg Config) *Sender {
-	return &Sender{host: cfg.Host, port: cfg.Port, username: cfg.Username, password: cfg.Password, from: cfg.From}
+	return &Sender{host: cfg.Host, port: cfg.Port, username: cfg.Username, password: cfg.Password, fromName: cfg.FromName, from: cfg.From}
 }
 
 func (s *Sender) Enabled() bool {
@@ -73,7 +75,7 @@ func (s *Sender) Send(to, subject, body string) error {
 	if err != nil {
 		return fmt.Errorf("mail: DATA: %w", err)
 	}
-	if _, err := w.Write(buildMessage(s.from, to, subject, body)); err != nil {
+	if _, err := w.Write(buildMessage(s.fromName, s.from, to, subject, body)); err != nil {
 		w.Close()
 		return fmt.Errorf("mail: 写入正文: %w", err)
 	}
@@ -91,7 +93,7 @@ func (s *Sender) dial(addr string) (net.Conn, error) {
 	return net.DialTimeout("tcp", addr, 15*time.Second)
 }
 
-func buildMessage(from, to, subject, body string) []byte {
+func buildMessage(fromName, from, to, subject, body string) []byte {
 	encoded := base64.StdEncoding.EncodeToString([]byte(body))
 	var wrapped strings.Builder
 	for i := 0; i < len(encoded); i += 76 {
@@ -99,8 +101,12 @@ func buildMessage(from, to, subject, body string) []byte {
 		wrapped.WriteString(encoded[i:end])
 		wrapped.WriteString("\r\n")
 	}
+	headerFrom := from
+	if fromName != "" {
+		headerFrom = fmt.Sprintf("%s <%s>", mime.QEncoding.Encode("utf-8", fromName), from)
+	}
 	headers := []string{
-		"From: " + from,
+		"From: " + headerFrom,
 		"To: " + to,
 		"Subject: " + mime.QEncoding.Encode("utf-8", subject),
 		"Date: " + time.Now().Format(time.RFC1123Z),
