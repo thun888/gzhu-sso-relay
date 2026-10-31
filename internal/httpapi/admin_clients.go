@@ -75,6 +75,14 @@ func (h *AdminClients) List(c *gin.Context) {
 		if client.LogoType != "" {
 			logoURL = "/api/clients/" + url.PathEscape(client.ClientID) + "/logo"
 		}
+		redirects := client.RedirectURLs
+		if redirects == nil {
+			redirects = []string{}
+		}
+		bindings := client.RequiredBindings
+		if bindings == nil {
+			bindings = []string{}
+		}
 		views = append(views, clientView{
 			ClientID:         client.ClientID,
 			Name:             client.Name,
@@ -83,8 +91,8 @@ func (h *AdminClients) List(c *gin.Context) {
 			Description:      client.Description,
 			IsPublic:         client.IsPublic,
 			IsPrivate:        client.IsPrivate,
-			RedirectURLs:     client.RedirectURLs,
-			RequiredBindings: client.RequiredBindings,
+			RedirectURLs:     redirects,
+			RequiredBindings: bindings,
 			Scopes:           scopes,
 			GroupIDs:         groupIDs,
 			Users:            users,
@@ -150,14 +158,23 @@ func (h *AdminClients) Create(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	redirects := req.RedirectURLs
+	if redirects == nil {
+		redirects = []string{}
+	}
+	bindings := req.RequiredBindings
+	if bindings == nil {
+		bindings = []string{}
+	}
+
 	client := model.OAuthClient{
 		ClientID:         clientID,
 		SecretHash:       hash,
 		Name:             req.Name,
 		HomepageURL:      strings.TrimSpace(req.HomepageURL),
 		Description:      strings.TrimSpace(req.Description),
-		RedirectURLs:     req.RedirectURLs,
-		RequiredBindings: req.RequiredBindings,
+		RedirectURLs:     redirects,
+		RequiredBindings: bindings,
 		IsPublic:         req.IsPublic,
 		IsPrivate:        req.IsPrivate,
 	}
@@ -217,7 +234,11 @@ func (h *AdminClients) Patch(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		fields["required_bindings"] = *req.RequiredBindings
+		bindings := *req.RequiredBindings
+		if bindings == nil {
+			bindings = []string{}
+		}
+		fields["required_bindings"] = bindings
 	}
 	if req.IsPublic != nil {
 		fields["is_public"] = *req.IsPublic

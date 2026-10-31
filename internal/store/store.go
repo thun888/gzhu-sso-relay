@@ -62,6 +62,18 @@ func Migrate(db *gorm.DB, logos *logo.Store) error {
 	if err := migrateClientLogo(db, logos); err != nil {
 		return err
 	}
+	if err := backfillClientArrays(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// 早期创建的应用没有写 required_bindings，jsonb 列留了 NULL，序列化出来是 null。
+func backfillClientArrays(db *gorm.DB) error {
+	err := db.Exec(`UPDATE oauth_clients SET required_bindings = '[]'::jsonb WHERE required_bindings IS NULL`).Error
+	if err != nil {
+		return fmt.Errorf("store: 回填 oauth_clients.required_bindings: %w", err)
+	}
 	return nil
 }
 
