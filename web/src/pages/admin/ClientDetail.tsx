@@ -65,6 +65,10 @@ function Logo({ client, size }: { client: Client; size: number }) {
   )
 }
 
+function sameSet<T>(a: T[], b: T[]) {
+  return a.length === b.length && a.every((item) => b.includes(item))
+}
+
 export function ClientDetail({
   client,
   scopes,
@@ -77,21 +81,45 @@ export function ClientDetail({
   const [name, setName] = useState(client.name)
   const [homepage, setHomepage] = useState(client.homepage_url)
   const [description, setDescription] = useState(client.description)
+  const [redirects, setRedirects] = useState(client.redirect_urls)
+  const [selectedScopes, setSelectedScopes] = useState(client.scopes)
+  const [bindings, setBindings] = useState(client.required_bindings)
+  const [isPrivate, setIsPrivate] = useState(client.is_private)
+  const [groupIds, setGroupIds] = useState<number[]>(client.group_ids)
+  const [members, setMembers] = useState(client.users)
 
   const [redirect, setRedirect] = useState("")
   const [rotated, setRotated] = useState("")
   const [copied, setCopied] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const [userQuery, setUserQuery] = useState("")
   const [candidates, setCandidates] = useState<Member[]>([])
 
   const logoInput = useRef<HTMLInputElement | null>(null)
 
+  function resetDrafts() {
+    setName(client.name)
+    setHomepage(client.homepage_url)
+    setDescription(client.description)
+    setRedirects(client.redirect_urls)
+    setSelectedScopes(client.scopes)
+    setBindings(client.required_bindings)
+    setIsPrivate(client.is_private)
+    setGroupIds(client.group_ids)
+    setMembers(client.users)
+  }
+
+  useEffect(() => {
+    resetDrafts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client])
+
   useEffect(() => {
     const query = userQuery.trim()
-    if (!client.is_private || query.length < 2) {
+    if (!isPrivate || query.length < 2) {
       setCandidates([])
       return
     }
@@ -100,39 +128,77 @@ export function ClientDetail({
         const data = await api<{ users: Member[] }>(
           `/api/admin/users?limit=8&q=${encodeURIComponent(query)}`,
         )
-        setCandidates(data.users.filter((user) => !client.users.some((m) => m.id === user.id)))
+        setCandidates(data.users.filter((user) => !members.some((m) => m.id === user.id)))
       } catch {
         setCandidates([])
       }
     }, 250)
     return () => clearTimeout(timer)
-  }, [userQuery, client])
+  }, [userQuery, isPrivate, members])
 
-  async function patch(body: Record<string, unknown>) {
+  const dirty =
+    name.trim() !== client.name ||
+    homepage.trim() !== client.homepage_url ||
+    description.trim() !== client.description ||
+    redirects.join("\n") !== client.redirect_urls.join("\n") ||
+    !sameSet(selectedScopes, client.scopes) ||
+    !sameSet(bindings, client.required_bindings) ||
+    isPrivate !== client.is_private ||
+    !sameSet(groupIds, client.group_ids) ||
+    !sameSet(
+      members.map((m) => m.id),
+      client.users.map((u) => u.id),
+    )
+
+  async function save() {
+    setSaving(true)
     try {
-      await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      })
+      const body: Record<string, unknown> = {}
+      if (name.trim() !== client.name) body.name = name.trim()
+      if (homepage.trim() !== client.homepage_url) body.homepage_url = homepage.trim()
+      if (description.trim() !== client.description) body.description = description.trim()
+      if (redirects.join("\n") !== client.redirect_urls.join("\n")) body.redirect_urls = redirects
+      if (!sameSet(bindings, client.required_bindings)) body.required_bindings = bindings
+      if (isPrivate !== client.is_private) body.is_private = isPrivate
+      if (Object.keys(body).length > 0) {
+        await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        })
+      }
+
+      if (!sameSet(selectedScopes, client.scopes)) {
+        await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/scopes`, {
+          method: "PUT",
+          body: JSON.stringify({ scopes: selectedScopes }),
+        })
+      }
+
+      if (isPrivate) {
+        if (!sameSet(groupIds, client.group_ids)) {
+          await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/groups`, {
+            method: "PUT",
+            body: JSON.stringify({ group_ids: groupIds }),
+          })
+        }
+        if (
+          !sameSet(
+            members.map((m) => m.id),
+            client.users.map((u) => u.id),
+          )
+        ) {
+          await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/users`, {
+            method: "PUT",
+            body: JSON.stringify({ user_ids: members.map((m) => m.id) }),
+          })
+        }
+      }
+
       await onReload()
     } catch (err) {
       onError((err as Error).message)
-    }
-  }
-
-  async function saveInfo() {
-    await patch({ name: name.trim(), homepage_url: homepage.trim(), description: description.trim() })
-  }
-
-  async function saveUsers(ids: string[]) {
-    try {
-      await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/users`, {
-        method: "PUT",
-        body: JSON.stringify({ user_ids: ids }),
-      })
-      await onReload()
-    } catch (err) {
-      onError((err as Error).message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -203,11 +269,6 @@ export function ClientDetail({
       () => undefined,
     )
   }
-
-  const dirty =
-    name.trim() !== client.name ||
-    homepage.trim() !== client.homepage_url ||
-    description.trim() !== client.description
 
   return (
     <div className="space-y-4">
@@ -305,11 +366,6 @@ export function ClientDetail({
                   onChange={(event) => setDescription(event.target.value)}
                 />
               </label>
-              {dirty && (
-                <Button className="h-8 w-auto px-3.5" onClick={saveInfo}>
-                  保存修改
-                </Button>
-              )}
             </div>
           </div>
         </Section>
@@ -357,7 +413,7 @@ export function ClientDetail({
 
         <Section title="回调地址" description="授权完成后跳回的地址，必须完全匹配">
           <div className="space-y-2">
-            {client.redirect_urls.map((item) => (
+            {redirects.map((item) => (
               <div
                 key={item}
                 className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
@@ -365,13 +421,13 @@ export function ClientDetail({
                 <span className="min-w-0 truncate font-mono text-[12px] text-foreground">{item}</span>
                 <button
                   className="shrink-0 text-[12px] text-destructive hover:underline"
-                  onClick={() => patch({ redirect_urls: client.redirect_urls.filter((url) => url !== item) })}
+                  onClick={() => setRedirects(redirects.filter((url) => url !== item))}
                 >
                   删除
                 </button>
               </div>
             ))}
-            {client.redirect_urls.length === 0 && (
+            {redirects.length === 0 && (
               <p className="text-[12.5px] text-muted-foreground">还没有回调地址</p>
             )}
 
@@ -381,8 +437,9 @@ export function ClientDetail({
                 event.preventDefault()
                 const value = redirect.trim()
                 if (!value) return
+                if (redirects.includes(value)) return
                 setRedirect("")
-                patch({ redirect_urls: [...client.redirect_urls, value] })
+                setRedirects([...redirects, value])
               }}
             >
               <Input
@@ -406,19 +463,14 @@ export function ClientDetail({
                 {scopes.map((scope) => (
                   <Chip
                     key={scope.name}
-                    active={client.scopes.includes(scope.name)}
+                    active={selectedScopes.includes(scope.name)}
                     label={scope.display_name}
                     onClick={() =>
-                      api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/scopes`, {
-                        method: "PUT",
-                        body: JSON.stringify({
-                          scopes: client.scopes.includes(scope.name)
-                            ? client.scopes.filter((item) => item !== scope.name)
-                            : [...client.scopes, scope.name],
-                        }),
-                      })
-                        .then(onReload)
-                        .catch((err: Error) => onError(err.message))
+                      setSelectedScopes(
+                        selectedScopes.includes(scope.name)
+                          ? selectedScopes.filter((item) => item !== scope.name)
+                          : [...selectedScopes, scope.name],
+                      )
                     }
                   />
                 ))}
@@ -432,14 +484,14 @@ export function ClientDetail({
                   {providers.map((provider) => (
                     <Chip
                       key={provider.name}
-                      active={client.required_bindings.includes(provider.name)}
+                      active={bindings.includes(provider.name)}
                       label={provider.display_name}
                       onClick={() =>
-                        patch({
-                          required_bindings: client.required_bindings.includes(provider.name)
-                            ? client.required_bindings.filter((item) => item !== provider.name)
-                            : [...client.required_bindings, provider.name],
-                        })
+                        setBindings(
+                          bindings.includes(provider.name)
+                            ? bindings.filter((item) => item !== provider.name)
+                            : [...bindings, provider.name],
+                        )
                       }
                     />
                   ))}
@@ -450,20 +502,12 @@ export function ClientDetail({
             <div>
               <div className="text-[12px] text-muted-foreground">访问范围</div>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <Chip
-                  active={!client.is_private}
-                  label="所有登录用户"
-                  onClick={() => patch({ is_private: false })}
-                />
-                <Chip
-                  active={client.is_private}
-                  label="仅指定用户与用户组"
-                  onClick={() => patch({ is_private: true })}
-                />
+                <Chip active={!isPrivate} label="所有登录用户" onClick={() => setIsPrivate(false)} />
+                <Chip active={isPrivate} label="仅指定用户与用户组" onClick={() => setIsPrivate(true)} />
               </div>
             </div>
 
-            {client.is_private && (
+            {isPrivate && (
               <div className="space-y-3 rounded-lg border border-border bg-secondary/20 px-3 py-3">
                 <div>
                   <div className="text-[12px] text-muted-foreground">允许访问的用户组</div>
@@ -471,19 +515,14 @@ export function ClientDetail({
                     {groups.map((group) => (
                       <Chip
                         key={group.id}
-                        active={client.group_ids.includes(group.id)}
+                        active={groupIds.includes(group.id)}
                         label={group.name}
                         onClick={() =>
-                          api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/groups`, {
-                            method: "PUT",
-                            body: JSON.stringify({
-                              group_ids: client.group_ids.includes(group.id)
-                                ? client.group_ids.filter((id) => id !== group.id)
-                                : [...client.group_ids, group.id],
-                            }),
-                          })
-                            .then(onReload)
-                            .catch((err: Error) => onError(err.message))
+                          setGroupIds(
+                            groupIds.includes(group.id)
+                              ? groupIds.filter((id) => id !== group.id)
+                              : [...groupIds, group.id],
+                          )
                         }
                       />
                     ))}
@@ -495,9 +534,9 @@ export function ClientDetail({
 
                 <div>
                   <div className="text-[12px] text-muted-foreground">用户白名单</div>
-                  {client.users.length > 0 && (
+                  {members.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {client.users.map((user) => (
+                      {members.map((user) => (
                         <span
                           key={user.id}
                           className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card py-0.5 pr-1 pl-2 text-[12px] text-foreground"
@@ -507,9 +546,7 @@ export function ClientDetail({
                           <button
                             aria-label={`移除 ${user.name}`}
                             className="rounded p-0.5 text-muted-foreground hover:text-destructive"
-                            onClick={() =>
-                              saveUsers(client.users.filter((m) => m.id !== user.id).map((m) => m.id))
-                            }
+                            onClick={() => setMembers(members.filter((m) => m.id !== user.id))}
                           >
                             <X className="size-3" strokeWidth={2} />
                           </button>
@@ -540,7 +577,7 @@ export function ClientDetail({
                           onClick={() => {
                             setUserQuery("")
                             setCandidates([])
-                            saveUsers([...client.users.map((m) => m.id), user.id])
+                            setMembers([...members, user])
                           }}
                         >
                           <span className="min-w-0 text-[12.5px] text-foreground">
@@ -555,7 +592,7 @@ export function ClientDetail({
                     </div>
                   )}
 
-                  {client.users.length === 0 && client.group_ids.length === 0 && (
+                  {members.length === 0 && groupIds.length === 0 && (
                     <p className="mt-2 text-[11.5px] text-destructive">
                       白名单为空，当前没有任何账号能授权该应用
                     </p>
@@ -566,6 +603,29 @@ export function ClientDetail({
           </div>
         </Section>
       </div>
+
+      {dirty && (
+        <div className="sticky bottom-4 z-10">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-5 py-3 shadow-lg shadow-black/5">
+            <span className="text-[12.5px] text-muted-foreground">
+              有未保存的修改，点击保存后生效
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="h-8 w-auto px-3"
+                disabled={saving}
+                onClick={resetDrafts}
+              >
+                放弃修改
+              </Button>
+              <Button className="h-8 w-auto px-4" disabled={saving} onClick={save}>
+                {saving ? "保存中…" : "保存全部修改"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={pendingDelete}
