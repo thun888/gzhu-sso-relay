@@ -74,10 +74,10 @@ type Result struct {
 }
 
 // Login 优先用本地哈希校验；本地不匹配时回访上游，覆盖上游改密与首次登录两种情况。
-func (s *Service) Login(ctx context.Context, id, password string) (*Result, error) {
+func (s *Service) Login(ctx context.Context, id, password, userAgent string) (*Result, error) {
 	user, err := s.users.ByID(ctx, id)
 	if errors.Is(err, repo.ErrNotFound) {
-		return s.provision(ctx, id, password)
+		return s.provision(ctx, id, password, userAgent)
 	}
 	if err != nil {
 		return nil, err
@@ -85,16 +85,16 @@ func (s *Service) Login(ctx context.Context, id, password string) (*Result, erro
 
 	if ok, verr := cryptox.VerifyPassword(user.PasswordHash, password); verr == nil && ok {
 		if user.UpstreamStale {
-			return s.reverifyUpstream(ctx, user, password)
+			return s.reverifyUpstream(ctx, user, password, userAgent)
 		}
 		result, err := s.issue(ctx, user)
 		if err == nil && s.shouldRefresh() {
-			s.refreshUpstream(user.ID, password)
+			s.refreshUpstream(user.ID, password, userAgent)
 		}
 		return result, err
 	}
 
-	profile, err := s.authenticateUpstream(ctx, id, password)
+	profile, err := s.authenticateUpstream(ctx, id, password, userAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +131,8 @@ func (s *Service) Resolve(ctx context.Context, token string) (*model.User, error
 	return s.users.ByID(ctx, id)
 }
 
-func (s *Service) provision(ctx context.Context, id, password string) (*Result, error) {
-	profile, err := s.authenticateUpstream(ctx, id, password)
+func (s *Service) provision(ctx context.Context, id, password, userAgent string) (*Result, error) {
+	profile, err := s.authenticateUpstream(ctx, id, password, userAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +167,8 @@ func (s *Service) provision(ctx context.Context, id, password string) (*Result, 
 
 // reverifyUpstream 处理本地命中但上次上游验证被拒的登录：同步复核通过才放行，
 // 复核失败说明本地哈希已过期，保留标记等待下次复核。
-func (s *Service) reverifyUpstream(ctx context.Context, user *model.User, password string) (*Result, error) {
-	profile, err := s.authenticateUpstream(ctx, user.ID, password)
+func (s *Service) reverifyUpstream(ctx context.Context, user *model.User, password, userAgent string) (*Result, error) {
+	profile, err := s.authenticateUpstream(ctx, user.ID, password, userAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -188,12 +188,12 @@ func (s *Service) shouldRefresh() bool {
 }
 
 // refreshUpstream 在响应返回后再访问上游，不影响这次登录；上游明确拒绝时标记本地密码过期。
-func (s *Service) refreshUpstream(userID, password string) {
+func (s *Service) refreshUpstream(userID, password, userAgent string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), s.upstream.Timeout)
 		defer cancel()
 
-		profile, err := s.fetchUpstream(ctx, userID, password)
+		profile, err := s.fetchUpstream(ctx, userID, password, userAgent)
 		if err != nil {
 			if errors.Is(err, ErrInvalidCredentials) {
 				if markErr := s.users.SetUpstreamStale(ctx, userID, true); markErr != nil {
@@ -260,7 +260,7 @@ func (s *Service) issue(ctx context.Context, user *model.User) (*Result, error) 
 	return &Result{User: user, Token: token}, nil
 }
 
-func (s *Service) authenticateUpstream(ctx context.Context, id, password string) (portal.Profile, error) {
+func (s *Service) authenticateUpstream(ctx context.Context, id, password, userAgent string) (portal.Profile, error) {
 	allowed, err := s.throttle.Allow(ctx, id)
 	if err != nil {
 		return portal.Profile{}, err
@@ -268,10 +268,10 @@ func (s *Service) authenticateUpstream(ctx context.Context, id, password string)
 	if !allowed {
 		return portal.Profile{}, ErrTooManyAttempts
 	}
-	return s.fetchUpstream(ctx, id, password)
+	return s.fetchUpstream(ctx, id, password, userAgent)
 }
 
-func (s *Service) fetchUpstream(ctx context.Context, id, password string) (portal.Profile, error) {
+func (s *Service) fetchUpstream(ctx context.Context, id, password, userAgent string) (portal.Profile, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return portal.Profile{}, fmt.Errorf("auth: 创建 cookie jar: %w", err)
@@ -280,6 +280,7 @@ func (s *Service) fetchUpstream(ctx context.Context, id, password string) (porta
 
 	casClient := cas.NewClient(httpClient)
 	casClient.BaseURL = s.upstream.CASBaseURL
+	casClient.UserAgent = userAgent
 	if err := casClient.Login(ctx, id, password); err != nil {
 		switch {
 		case errors.Is(err, cas.ErrInvalidCredentials):
@@ -294,6 +295,7 @@ func (s *Service) fetchUpstream(ctx context.Context, id, password string) (porta
 
 	portalClient := portal.NewClient(httpClient)
 	portalClient.BaseURL = s.upstream.PortalBaseURL
+	portalClient.UserAgent = userAgent
 	if err := portalClient.Bootstrap(ctx); err != nil {
 		return portal.Profile{}, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}

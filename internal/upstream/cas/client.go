@@ -12,13 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/thun888/gzhu-sso-relay/internal/upstream"
 )
 
 const (
 	DefaultBaseURL = "https://newcas.gzhu.edu.cn"
 	loginPath      = "/cas/login"
 	portalTitle    = "融合门户"
-	userAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 var (
@@ -35,15 +36,20 @@ var (
 )
 
 type Client struct {
-	BaseURL string
-	HTTP    *http.Client
+	BaseURL   string
+	UserAgent string
+	HTTP      *http.Client
 }
 
 func NewClient(hc *http.Client) *Client {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &Client{BaseURL: DefaultBaseURL, HTTP: hc}
+	return &Client{BaseURL: DefaultBaseURL, UserAgent: upstream.DefaultUserAgent, HTTP: hc}
+}
+
+func (c *Client) agent() string {
+	return upstream.RequestUserAgent(c.UserAgent)
 }
 
 func (c *Client) Login(ctx context.Context, username, password string) error {
@@ -67,7 +73,7 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", c.agent())
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
@@ -115,7 +121,7 @@ func (c *Client) issueToken(ctx context.Context) (lt, execution string, err erro
 	if err != nil {
 		return "", "", err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", c.agent())
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

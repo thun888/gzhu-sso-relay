@@ -63,7 +63,7 @@ func (h *Auth) Login(c *gin.Context) {
 		}
 	}
 
-	result, err := h.service.Login(ctx, req.Username, req.Password)
+	result, err := h.service.Login(ctx, req.Username, req.Password, c.Request.UserAgent())
 	if err != nil {
 		log.Printf("登录失败 id=%s ip=%s: %v", req.Username, ip, err)
 		if errors.Is(err, auth.ErrInvalidCredentials) {

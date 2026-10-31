@@ -9,12 +9,13 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/thun888/gzhu-sso-relay/internal/upstream"
 )
 
 const (
 	DefaultBaseURL = "https://newmy.gzhu.edu.cn"
 	profilePath    = "/up/up/gzhuStaffInfo/getPIThree"
-	userAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 var ErrProfileUnavailable = errors.New("portal: 未取到 MOBILE，无法确定身份")
@@ -30,15 +31,20 @@ type Profile struct {
 }
 
 type Client struct {
-	BaseURL string
-	HTTP    *http.Client
+	BaseURL   string
+	UserAgent string
+	HTTP      *http.Client
 }
 
 func NewClient(hc *http.Client) *Client {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &Client{BaseURL: DefaultBaseURL, HTTP: hc}
+	return &Client{BaseURL: DefaultBaseURL, UserAgent: upstream.DefaultUserAgent, HTTP: hc}
+}
+
+func (c *Client) agent() string {
+	return upstream.RequestUserAgent(c.UserAgent)
 }
 
 // Bootstrap 走一次门户首页，让 CAS 票据在本域落地成门户自己的会话 cookie。
@@ -48,7 +54,7 @@ func (c *Client) Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", c.agent())
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
@@ -76,7 +82,7 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 		return Profile{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", c.agent())
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
