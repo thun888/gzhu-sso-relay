@@ -20,14 +20,13 @@ const (
 var ErrCodeInvalid = errors.New("oidc: 授权码无效或已使用")
 
 type Grant struct {
-	UserID          string   `json:"user_id"`
-	ClientID        string   `json:"client_id"`
-	RedirectURI     string   `json:"redirect_uri"`
-	Scopes          []string `json:"scopes"`
-	Nonce           string   `json:"nonce,omitempty"`
-	CodeChallenge   string   `json:"code_challenge,omitempty"`
-	ChallengeMethod string   `json:"challenge_method,omitempty"`
-	AuthTime        int64    `json:"auth_time"`
+	UserID        string   `json:"user_id"`
+	ClientID      string   `json:"client_id"`
+	RedirectURI   string   `json:"redirect_uri"`
+	Scopes        []string `json:"scopes"`
+	Nonce         string   `json:"nonce,omitempty"`
+	CodeChallenge string   `json:"code_challenge,omitempty"`
+	AuthTime      int64    `json:"auth_time"`
 }
 
 type CodeStore struct {

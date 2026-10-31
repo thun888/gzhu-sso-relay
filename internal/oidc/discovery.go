@@ -30,7 +30,7 @@ func (p *Provider) Discovery(c *gin.Context) {
 		"claims_supported":                           supportedClaims,
 		"token_endpoint_auth_methods_supported":      []string{"client_secret_basic", "client_secret_post", "none"},
 		"revocation_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
-		"code_challenge_methods_supported":           []string{"S256", "plain"},
+		"code_challenge_methods_supported":           []string{"S256"},
 	})
 }
 

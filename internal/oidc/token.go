@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
@@ -48,6 +50,7 @@ func (p *Provider) Token(c *gin.Context) {
 
 	client, err := p.clients.ByClientID(ctx, clientID)
 	if err != nil || !client.Enabled {
+		dummyVerify(secret)
 		p.countFailure(ctx, c)
 		tokenError(c, http.StatusUnauthorized, "invalid_client", "未知的客户端")
 		return
@@ -80,7 +83,7 @@ func (p *Provider) exchangeCode(c *gin.Context, client *model.OAuthClient, form 
 		tokenError(c, http.StatusBadRequest, "invalid_grant", "授权码与客户端不匹配")
 		return
 	}
-	if got := form.Get("redirect_uri"); got != "" && got != grant.RedirectURI {
+	if got := form.Get("redirect_uri"); got != grant.RedirectURI {
 		tokenError(c, http.StatusBadRequest, "invalid_grant", "redirect_uri 不匹配")
 		return
 	}
@@ -261,6 +264,22 @@ func secretMatches(client *model.OAuthClient, secret string) bool {
 	return err == nil && matched
 }
 
+// dummyHash 让未知 client_id 的请求也付出一次 Argon2id 计算，
+// 使令牌端点各失败分支耗时一致，避免按响应时间枚举已注册的客户端。
+var dummyHash = sync.OnceValue(func() string {
+	hash, err := cryptox.HashPassword(uuid.NewString())
+	if err != nil {
+		return ""
+	}
+	return hash
+})
+
+func dummyVerify(secret string) {
+	if hash := dummyHash(); hash != "" {
+		_, _ = cryptox.VerifyPassword(hash, secret)
+	}
+}
+
 func verifyPKCE(grant *Grant, verifier string) bool {
 	if grant.CodeChallenge == "" {
 		return true
@@ -268,12 +287,9 @@ func verifyPKCE(grant *Grant, verifier string) bool {
 	if verifier == "" {
 		return false
 	}
-	if grant.ChallengeMethod == "S256" {
-		sum := sha256.Sum256([]byte(verifier))
-		encoded := base64.RawURLEncoding.EncodeToString(sum[:])
-		return subtle.ConstantTimeCompare([]byte(encoded), []byte(grant.CodeChallenge)) == 1
-	}
-	return subtle.ConstantTimeCompare([]byte(verifier), []byte(grant.CodeChallenge)) == 1
+	sum := sha256.Sum256([]byte(verifier))
+	encoded := base64.RawURLEncoding.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(encoded), []byte(grant.CodeChallenge)) == 1
 }
 
 func tokenError(c *gin.Context, status int, code, description string) {

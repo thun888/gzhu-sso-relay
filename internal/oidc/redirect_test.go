@@ -46,8 +46,7 @@ func TestRedirectMatches(t *testing.T) {
 func TestVerifyPKCE(t *testing.T) {
 	const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 	grant := &Grant{
-		CodeChallenge:   "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-		ChallengeMethod: "S256",
+		CodeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
 	}
 	if !verifyPKCE(grant, verifier) {
 		t.Fatal("S256 challenge 应校验通过")

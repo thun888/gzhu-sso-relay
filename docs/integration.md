@@ -51,7 +51,7 @@ discovery 声明的能力：
 | `scopes_supported` | `openid`、`profile`、`email`、`groups` |
 | `token_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `revocation_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
-| `code_challenge_methods_supported` | `S256`、`plain` |
+| `code_challenge_methods_supported` | `S256` |
 
 ## 授权码流程
 
@@ -78,7 +78,7 @@ GET <issuer>/oidc/authorize?
 | `state` | 否 | 原样回传，用于防 CSRF |
 | `nonce` | 否 | 写入 `id_token` 的 `nonce` |
 | `code_challenge` | 公开客户端必填 | PKCE challenge |
-| `code_challenge_method` | 否 | `S256` 或 `plain`，缺省 `plain` |
+| `code_challenge_method` | 公开客户端必填 | 必须为 `S256`，不支持 `plain` |
 
 relay 依次检查：
 
@@ -122,7 +122,7 @@ client_id=gitea&client_secret=<secret>
 | --- | --- | --- |
 | `grant_type` | 是 | 固定 `authorization_code` |
 | `code` | 是 | 授权码 |
-| `redirect_uri` | 否 | 传了就必须与授权时一致 |
+| `redirect_uri` | 是 | 必须与授权时一致 |
 | `client_id` | 是 | 使用 Basic 认证时从头部取 |
 | `client_secret` | 机密客户端必填 | 公开客户端忽略 |
 | `code_verifier` | 有 challenge 时必填 | PKCE verifier |
@@ -363,7 +363,7 @@ curl -s -u gitea:<client_secret> \
 | --- | --- |
 | 授权模式 | authorization code 与 refresh token |
 | 刷新令牌 | 支持，有效期 30 天，每次刷新轮转，旧值立即作废 |
-| PKCE | 支持 `S256` 与 `plain`；公开客户端强制 |
+| PKCE | 仅支持 `S256`；公开客户端强制 |
 | 令牌撤销 | 支持 RFC 7009，refresh token 立即删除，access token 进入撤销列表直到过期 |
 | 令牌自省 | 不提供 introspection 端点 |
 | 单点退出 | 不提供 end_session 端点 |

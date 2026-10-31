@@ -38,6 +38,7 @@ func (p *Provider) Revoke(c *gin.Context) {
 	}
 	client, err := p.clients.ByClientID(ctx, clientID)
 	if err != nil {
+		dummyVerify(secret)
 		p.countFailure(ctx, c)
 		tokenError(c, http.StatusUnauthorized, "invalid_client", "未知的客户端")
 		return

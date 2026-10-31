@@ -103,11 +103,8 @@ func (p *Provider) Authorize(c *gin.Context) {
 	challenge := query.Get("code_challenge")
 	method := query.Get("code_challenge_method")
 	if challenge != "" {
-		if method == "" {
-			method = "plain"
-		}
-		if method != "S256" && method != "plain" {
-			redirectError(c, redirectURI, state, "invalid_request", "不支持的 code_challenge_method")
+		if method != "S256" {
+			redirectError(c, redirectURI, state, "invalid_request", "code_challenge_method 必须为 S256")
 			return
 		}
 	} else if client.IsPublic {
@@ -116,14 +113,13 @@ func (p *Provider) Authorize(c *gin.Context) {
 	}
 
 	code, err := p.codes.Issue(ctx, Grant{
-		UserID:          user.ID,
-		ClientID:        client.ClientID,
-		RedirectURI:     redirectURI,
-		Scopes:          scopes,
-		Nonce:           query.Get("nonce"),
-		CodeChallenge:   challenge,
-		ChallengeMethod: method,
-		AuthTime:        nowUnix(),
+		UserID:        user.ID,
+		ClientID:      client.ClientID,
+		RedirectURI:   redirectURI,
+		Scopes:        scopes,
+		Nonce:         query.Get("nonce"),
+		CodeChallenge: challenge,
+		AuthTime:      nowUnix(),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
