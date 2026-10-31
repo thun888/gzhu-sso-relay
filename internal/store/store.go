@@ -47,6 +47,24 @@ func Migrate(db *gorm.DB) error {
 	if err != nil {
 		return fmt.Errorf("store: 迁移表结构: %w", err)
 	}
+	if err := migrateGroupSource(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// 用户组来源早期存成 source 字符串，已并入 is_upstream 布尔值。
+func migrateGroupSource(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasColumn(&model.Group{}, "source") {
+		return nil
+	}
+	if err := db.Exec("UPDATE groups SET is_upstream = (source = 'upstream')").Error; err != nil {
+		return fmt.Errorf("store: 回填 groups.is_upstream: %w", err)
+	}
+	if err := migrator.DropColumn(&model.Group{}, "source"); err != nil {
+		return fmt.Errorf("store: 删除 groups.source: %w", err)
+	}
 	return nil
 }
 

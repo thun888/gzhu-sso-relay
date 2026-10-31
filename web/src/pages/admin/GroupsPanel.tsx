@@ -8,7 +8,7 @@ type Group = {
   id: number
   name: string
   code: string
-  source: string
+  is_upstream: boolean
   parent_id?: number | null
 }
 
@@ -129,7 +129,7 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] text-foreground">{group.name}</span>
-                    {group.source === "upstream" && (
+                    {group.is_upstream && (
                       <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
                         上游同步
                       </span>
@@ -140,7 +140,7 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
                   </div>
                 </div>
                 <div className="flex items-center gap-4 whitespace-nowrap">
-                  {group.source === "upstream" ? (
+                  {group.is_upstream ? (
                     <span className="text-[12.5px] text-muted-foreground">成员随登录同步</span>
                   ) : (
                     <button

@@ -30,11 +30,11 @@ type adminUserView struct {
 }
 
 type groupView struct {
-	ID       uint64  `json:"id"`
-	Name     string  `json:"name"`
-	Code     string  `json:"code"`
-	Source   string  `json:"source"`
-	ParentID *uint64 `json:"parent_id"`
+	ID         uint64  `json:"id"`
+	Name       string  `json:"name"`
+	Code       string  `json:"code"`
+	IsUpstream bool    `json:"is_upstream"`
+	ParentID   *uint64 `json:"parent_id"`
 }
 
 type userPatch struct {
@@ -126,7 +126,7 @@ func (h *Admin) ListGroups(c *gin.Context) {
 
 	out := make([]groupView, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, groupView{ID: g.ID, Name: g.Name, Code: g.Code, Source: g.Source, ParentID: g.ParentID})
+		out = append(out, groupView{ID: g.ID, Name: g.Name, Code: g.Code, IsUpstream: g.IsUpstream, ParentID: g.ParentID})
 	}
 	c.JSON(http.StatusOK, gin.H{"groups": out})
 }
@@ -146,13 +146,13 @@ func (h *Admin) CreateGroup(c *gin.Context) {
 		}
 	}
 
-	group := model.Group{Name: req.Name, Code: req.Code, Source: model.GroupSourceLocal, ParentID: req.ParentID}
+	group := model.Group{Name: req.Name, Code: req.Code, ParentID: req.ParentID}
 	if err := h.groups.Create(ctx, &group); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "创建用户组失败，code 可能已存在"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, groupView{ID: group.ID, Name: group.Name, Code: group.Code, Source: group.Source, ParentID: group.ParentID})
+	c.JSON(http.StatusCreated, groupView{ID: group.ID, Name: group.Name, Code: group.Code, IsUpstream: group.IsUpstream, ParentID: group.ParentID})
 }
 
 func (h *Admin) PatchGroup(c *gin.Context) {
@@ -173,7 +173,7 @@ func (h *Admin) PatchGroup(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
 			return
 		}
-		if group.Source == model.GroupSourceUpstream {
+		if group.IsUpstream {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不能修改名称与标识"})
 			return
 		}
@@ -256,7 +256,7 @@ func (h *Admin) SetGroupMembers(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
 		return
 	}
-	if group.Source == model.GroupSourceUpstream {
+	if group.IsUpstream {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不支持手工维护成员"})
 		return
 	}

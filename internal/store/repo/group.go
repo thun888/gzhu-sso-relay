@@ -128,10 +128,10 @@ func (r *GroupRepo) SyncUpstream(ctx context.Context, userID string, specs []Gro
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		ids := make([]uint64, 0, len(specs))
 		for _, spec := range specs {
-			group := model.Group{Name: spec.Name, Code: spec.Code, Source: model.GroupSourceUpstream}
+			group := model.Group{Name: spec.Name, Code: spec.Code, IsUpstream: true}
 			err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "code"}},
-				DoUpdates: clause.AssignmentColumns([]string{"name", "updated_at"}),
+				DoUpdates: clause.AssignmentColumns([]string{"name", "is_upstream", "updated_at"}),
 			}).Create(&group).Error
 			if err != nil {
 				return err
@@ -139,7 +139,7 @@ func (r *GroupRepo) SyncUpstream(ctx context.Context, userID string, specs []Gro
 			ids = append(ids, group.ID)
 		}
 
-		upstream := tx.Model(&model.Group{}).Select("id").Where("source = ?", model.GroupSourceUpstream)
+		upstream := tx.Model(&model.Group{}).Select("id").Where("is_upstream")
 		if err := tx.Where("user_id = ? AND group_id IN (?)", userID, upstream).Delete(&model.UserGroup{}).Error; err != nil {
 			return err
 		}
