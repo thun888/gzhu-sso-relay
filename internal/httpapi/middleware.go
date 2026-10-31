@@ -9,13 +9,17 @@ import (
 )
 
 // 登录页需要加载极验脚本，其余资源一律同源。
+const geetestOrigins = "https://*.geetest.com https://*.geevisit.com https://*.gsensebot.com"
+
+// 极验 v4 的挑战接口在 geetest、geevisit、gsensebot 三个域名间依次重试，
+// 只放行 static.geetest.com 会让后两个备用域名被拦。
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://static.geetest.com; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; " +
-	"font-src 'self' data:; " +
-	"connect-src 'self' https://*.geetest.com; " +
-	"frame-src 'self' https://*.geetest.com; " +
+	"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' " + geetestOrigins + "; " +
+	"style-src 'self' 'unsafe-inline' " + geetestOrigins + "; " +
+	"img-src 'self' data: blob: " + geetestOrigins + "; " +
+	"font-src 'self' data: " + geetestOrigins + "; " +
+	"connect-src 'self' " + geetestOrigins + "; " +
+	"frame-src 'self' " + geetestOrigins + "; " +
 	"frame-ancestors 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'; " +

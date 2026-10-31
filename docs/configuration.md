@@ -204,7 +204,7 @@ upstream:
 | `true` | `false` | 某个 IP 登录失败后，在 `fail_window` 内要求验证码；该 IP 任意一次登录成功即解除 |
 | `true` | `true` | 每次登录都要求验证码，不再记录失败次数 |
 
-`always: true` 适合完全对公网开放的部署。前端从 `https://static.geetest.com/v4/gt4.js` 加载组件，浏览器需要能访问该域名。
+`always: true` 适合完全对公网开放的部署。前端从 `https://static.geetest.com/v4/gt4.js` 加载组件，挑战接口在 `*.geetest.com`、`*.geevisit.com`、`*.gsensebot.com` 之间依次重试，浏览器需要能访问这三个域名。反代或防火墙只放行单个域名时，验证码会停在加载中。
 
 ## bindings
 
