@@ -55,6 +55,15 @@ upstream:
   # 每次登录成功后按该概率异步回访上游，刷新资料快照与上游用户组；0 表示从不刷新
   refresh_rate: 0.1
 
+# 登录通知邮件。host 留空时关闭该功能；配置后用户首次授权登录某个应用会收到邮件提醒，
+# 撤销授权后重新授权也不会重复发送
+smtp:
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from: "noreply@gzhu.edu.cn"
+
 # 极验行为验证。默认只在某个 IP 登录失败后，fail_window 内要求验证码；
 # 期间任意一次登录成功即解除，直到下次失败重新要求验证
 captcha:

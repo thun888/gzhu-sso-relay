@@ -54,6 +54,7 @@ func Migrate(db *gorm.DB, logos *logo.Store) error {
 		&model.OAuthAccount{},
 		&model.Consent{},
 		&model.ClientUserGrant{},
+		&model.LoginNotice{},
 	)
 	if err != nil {
 		return fmt.Errorf("store: 迁移表结构: %w", err)

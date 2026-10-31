@@ -24,6 +24,8 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
 	"github.com/thun888/gzhu-sso-relay/internal/logo"
+	"github.com/thun888/gzhu-sso-relay/internal/mail"
+	"github.com/thun888/gzhu-sso-relay/internal/notify"
 	"github.com/thun888/gzhu-sso-relay/internal/oidc"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
@@ -115,6 +117,14 @@ func run() error {
 	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, binding.NewStateStore(rdb), cfg.Server.BaseURL)
 	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
 
+	notifier := notify.New(mail.NewSender(mail.Config{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+		From:     cfg.SMTP.From,
+	}), repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
+
 	provider := oidc.New(oidc.Options{
 		Issuer:     cfg.Server.BaseURL,
 		LoginURL:   cfg.Server.LoginURL,
@@ -128,6 +138,7 @@ func run() error {
 		Users:      users,
 		Sessions:   sessions,
 		Codes:      oidc.NewCodeStore(rdb),
+		Notifier:   notifier,
 	})
 
 	router := gin.New()

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/thun888/gzhu-sso-relay/internal/notify"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
@@ -29,9 +30,10 @@ type Provider struct {
 	accounts *repo.AccountRepo
 	users    *repo.UserRepo
 	sessions *session.Manager
-	codes    *CodeStore
-	consents *repo.ConsentRepo
-	pending  *PendingStore
+	codes     *CodeStore
+	consents  *repo.ConsentRepo
+	pending   *PendingStore
+	notifier  *notify.Notifier
 }
 
 type Options struct {
@@ -47,6 +49,7 @@ type Options struct {
 	Codes      *CodeStore
 	Consents   *repo.ConsentRepo
 	Pending    *PendingStore
+	Notifier   *notify.Notifier
 }
 
 func New(opts Options) *Provider {
@@ -63,6 +66,7 @@ func New(opts Options) *Provider {
 		codes:      opts.Codes,
 		consents:   opts.Consents,
 		pending:    opts.Pending,
+		notifier:   opts.Notifier,
 	}
 }
 

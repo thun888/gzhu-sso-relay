@@ -130,6 +130,10 @@ func (p *Provider) Authorize(c *gin.Context) {
 		return
 	}
 
+	if p.notifier != nil {
+		p.notifier.FirstLogin(user, client)
+	}
+
 	target, err := url.Parse(redirectURI)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": "redirect_uri 不是合法 URL"})

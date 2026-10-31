@@ -18,8 +18,18 @@ type Config struct {
 	Database  Database `yaml:"database"`
 	Redis     Redis    `yaml:"redis"`
 	Upstream  Upstream `yaml:"upstream"`
+	SMTP      SMTP     `yaml:"smtp"`
 	Captcha   Captcha  `yaml:"captcha"`
 	Bindings  Bindings `yaml:"bindings"`
+}
+
+// SMTP 登录通知邮件的发送通道，host 留空时关闭登录通知。
+type SMTP struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	From     string `yaml:"from"`
 }
 
 // Captcha 极验行为验证。fail_window 内有失败记录时该 IP 登录需先过验证码，
@@ -153,6 +163,7 @@ func defaults() *Config {
 			Timeout:       Duration(30 * time.Second),
 			RefreshRate:   0.1,
 		},
+		SMTP: SMTP{Port: 587},
 	}
 }
 
@@ -198,6 +209,9 @@ func (c *Config) validate() error {
 		}
 	}
 
+	if c.SMTP.Host != "" && c.SMTP.From == "" {
+		return errors.New("smtp.from 不能为空")
+	}
 	if c.Upstream.Timeout <= 0 {
 		return errors.New("upstream.timeout 必须为正数")
 	}
