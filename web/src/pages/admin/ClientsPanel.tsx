@@ -140,9 +140,11 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
                 <div className="truncate text-[13.5px] font-medium text-primary hover:underline">
                   {client.name}
                 </div>
-                <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
-                  {client.description || client.client_id}
-                </div>
+                {client.description && (
+                  <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
+                    {client.description}
+                  </div>
+                )}
               </button>
 
               <span
