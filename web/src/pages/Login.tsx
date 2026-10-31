@@ -124,10 +124,10 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
       className="min-h-screen w-full bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: "url(/background.webp)" }}
     >
-      <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-5 py-10">
+      <div className="flex min-h-screen flex-col items-center px-5 py-10">
         <Card
           className={cn(
-            "w-full gap-0 overflow-hidden border-border/70 bg-card/95 py-0 backdrop-blur-sm",
+            "my-auto w-full gap-0 overflow-hidden border-border/70 bg-card/95 py-0 backdrop-blur-sm",
             "shadow-[0_1px_2px_rgba(16,24,40,0.05),0_28px_72px_-28px_rgba(16,24,40,0.28)]",
             showPanel ? "max-w-[800px]" : "max-w-[400px]",
           )}
@@ -237,7 +237,7 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
         </Card>
 
         {showFooter && (
-          <p className="max-w-[560px] px-2 text-center text-[12px] leading-[1.8] whitespace-pre-line text-muted-foreground">
+          <p className="mt-6 max-w-[560px] px-2 text-center text-[12px] leading-[1.8] whitespace-pre-line text-muted-foreground">
             {footer.text}
           </p>
         )}
