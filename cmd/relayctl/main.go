@@ -80,6 +80,8 @@ func createClient(ctx context.Context, db *gorm.DB, args []string) {
 			die(err)
 		}
 		clientID = generated
+	} else if !logo.SafeClientID(clientID) {
+		die(fmt.Errorf("client_id 只能包含字母、数字、下划线和连字符"))
 	}
 
 	var secret, hash string

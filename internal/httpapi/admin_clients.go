@@ -455,17 +455,7 @@ func (h *AdminClients) checkBindings(names []string) error {
 }
 
 func validClientID(raw string) bool {
-	if raw == "" || len(raw) > 64 {
-		return false
-	}
-	for _, r := range raw {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
-		default:
-			return false
-		}
-	}
-	return true
+	return logo.SafeClientID(raw)
 }
 
 type adminError string
