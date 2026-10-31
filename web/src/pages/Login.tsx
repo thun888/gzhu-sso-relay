@@ -24,6 +24,14 @@ function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
 
+function usernameError(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+  if (trimmed.includes("@")) return "请填写学号或教工号，不要输入邮箱"
+  if (!/^\d+$/.test(trimmed)) return "学号或教工号只能包含数字"
+  return ""
+}
+
 export default function Login({ siteTitle, panel, footer, captcha }: Props) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -35,10 +43,12 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
 
   const widget = useRef<CaptchaInstance | null>(null)
   const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
+  const usernameRef = useRef<HTMLInputElement | null>(null)
 
   const needCaptcha = captcha.enabled && (captcha.required || gated)
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
   const showFooter = footer.enabled && Boolean(footer.text.trim())
+  const usernameInvalid = usernameError(username)
 
   useEffect(() => {
     submitRef.current = (answer) => {
@@ -106,6 +116,11 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
     event.preventDefault()
     if (pending) return
 
+    if (usernameInvalid) {
+      usernameRef.current?.focus()
+      return
+    }
+
     if (needCaptcha) {
       if (!ready || !widget.current) {
         setError("验证正在加载，请稍后重试")
@@ -162,9 +177,12 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
                     strokeWidth={1.75}
                   />
                   <Input
+                    ref={usernameRef}
                     className="h-11 pl-10"
                     placeholder="请输入教工号或学号"
                     aria-label="教工号或学号"
+                    aria-invalid={Boolean(usernameInvalid)}
+                    aria-describedby={usernameInvalid ? "username-error" : undefined}
                     autoComplete="username"
                     autoFocus
                     required
@@ -172,6 +190,14 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
                     onChange={(event) => setUsername(event.target.value)}
                   />
                 </div>
+                {usernameInvalid && (
+                  <p
+                    id="username-error"
+                    className="mt-1.5 text-[12.5px] leading-[18px] text-destructive"
+                  >
+                    {usernameInvalid}
+                  </p>
+                )}
 
                 <div className="relative mt-3">
                   <Lock
