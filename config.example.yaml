@@ -74,8 +74,8 @@ bindings:
       display_name: Gitea
       client_id: ""
       client_secret: ""
-      auth_url: "https://git.gzhu.edu.cn/login/oauth/authorize"
-      token_url: "https://git.gzhu.edu.cn/login/oauth/access_token"
-      userinfo_url: "https://git.gzhu.edu.cn/api/v1/user"
+      auth_url: "https://git.example.com/login/oauth/authorize"
+      token_url: "https://git.example.com/login/oauth/access_token"
+      userinfo_url: "https://git.example.com/api/v1/user"
       id_field: "login"
       name_field: "login"

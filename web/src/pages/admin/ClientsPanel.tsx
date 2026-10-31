@@ -296,7 +296,7 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
         <FormRow label="回调地址" hint="多个地址用逗号或空格分隔，必须是完整的 http(s) 地址">
           <Input
             className="h-9"
-            placeholder="https://git.gzhu.edu.cn/user/oauth2/relay/callback"
+            placeholder="https://git.example.com/user/oauth2/relay/callback"
             value={form.redirect}
             onChange={(event) => setForm({ ...form, redirect: event.target.value })}
           />

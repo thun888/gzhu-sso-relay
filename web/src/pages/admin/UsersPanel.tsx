@@ -55,7 +55,6 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
   return (
     <Panel
       title="用户"
-      description="登录过的账号会自动入库，默认是普通用户"
       action={
         <form
           className="flex items-center gap-2"
