@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,9 +26,14 @@ func NewAdminClients(clients *repo.ClientRepo, scopes *repo.ScopeRepo, groups *r
 	return &AdminClients{clients: clients, scopes: scopes, groups: groups, users: users, registry: registry}
 }
 
+const maxLogoSize = 1 << 20
+
 type clientView struct {
 	ClientID         string            `json:"client_id"`
 	Name             string            `json:"name"`
+	LogoURL          string            `json:"logo_url"`
+	HomepageURL      string            `json:"homepage_url"`
+	Description      string            `json:"description"`
 	IsPublic         bool              `json:"is_public"`
 	IsPrivate        bool              `json:"is_private"`
 	RedirectURLs     []string          `json:"redirect_urls"`
@@ -63,9 +69,16 @@ func (h *AdminClients) List(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询应用用户白名单失败"})
 			return
 		}
+		logoURL := ""
+		if client.LogoType != "" {
+			logoURL = "/api/clients/" + url.PathEscape(client.ClientID) + "/logo"
+		}
 		views = append(views, clientView{
 			ClientID:         client.ClientID,
 			Name:             client.Name,
+			LogoURL:          logoURL,
+			HomepageURL:      client.HomepageURL,
+			Description:      client.Description,
 			IsPublic:         client.IsPublic,
 			IsPrivate:        client.IsPrivate,
 			RedirectURLs:     client.RedirectURLs,
@@ -83,6 +96,8 @@ func (h *AdminClients) List(c *gin.Context) {
 type clientCreate struct {
 	ClientID         string   `json:"client_id"`
 	Name             string   `json:"name" binding:"required"`
+	HomepageURL      string   `json:"homepage_url"`
+	Description      string   `json:"description"`
 	RedirectURLs     []string `json:"redirect_urls"`
 	Scopes           []string `json:"scopes"`
 	RequiredBindings []string `json:"required_bindings"`
@@ -137,6 +152,8 @@ func (h *AdminClients) Create(c *gin.Context) {
 		ClientID:         clientID,
 		SecretHash:       hash,
 		Name:             req.Name,
+		HomepageURL:      strings.TrimSpace(req.HomepageURL),
+		Description:      strings.TrimSpace(req.Description),
 		RedirectURLs:     req.RedirectURLs,
 		RequiredBindings: req.RequiredBindings,
 		IsPublic:         req.IsPublic,
@@ -159,6 +176,8 @@ func (h *AdminClients) Create(c *gin.Context) {
 
 type clientPatch struct {
 	Name             *string   `json:"name"`
+	HomepageURL      *string   `json:"homepage_url"`
+	Description      *string   `json:"description"`
 	RedirectURLs     *[]string `json:"redirect_urls"`
 	RequiredBindings *[]string `json:"required_bindings"`
 	IsPublic         *bool     `json:"is_public"`
@@ -176,7 +195,13 @@ func (h *AdminClients) Patch(c *gin.Context) {
 	fields := map[string]any{}
 
 	if req.Name != nil {
-		fields["name"] = *req.Name
+		fields["name"] = strings.TrimSpace(*req.Name)
+	}
+	if req.HomepageURL != nil {
+		fields["homepage_url"] = strings.TrimSpace(*req.HomepageURL)
+	}
+	if req.Description != nil {
+		fields["description"] = strings.TrimSpace(*req.Description)
 	}
 	if req.RedirectURLs != nil {
 		if err := h.checkRedirects(*req.RedirectURLs); err != nil {
@@ -410,4 +435,65 @@ func (h *AdminClients) Bindings(c *gin.Context) {
 		out = append(out, gin.H{"name": provider.Name, "display_name": provider.DisplayName})
 	}
 	c.JSON(http.StatusOK, gin.H{"providers": out})
+}
+
+func (h *AdminClients) Logo(c *gin.Context) {
+	client, err := h.clients.ByClientID(c.Request.Context(), c.Param("id"))
+	if err != nil || len(client.Logo) == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Data(http.StatusOK, client.LogoType, client.Logo)
+}
+
+func (h *AdminClients) UploadLogo(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := h.clients.ByClientID(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "应用不存在"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxLogoSize+4096)
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "读取图片失败"})
+		return
+	}
+	defer file.Close()
+
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(file, head)
+	contentType := http.DetectContentType(head[:n])
+	switch contentType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只支持 PNG、JPEG、GIF、WebP"})
+		return
+	}
+
+	rest, err := io.ReadAll(io.LimitReader(file, maxLogoSize+1))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "读取图片失败"})
+		return
+	}
+	data := append(head[:n], rest...)
+	if len(data) > maxLogoSize || int64(len(data)) != header.Size {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图片不能超过 1MB"})
+		return
+	}
+
+	if err := h.clients.Update(c.Request.Context(), id, map[string]any{"logo": data, "logo_type": contentType}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logo_url": "/api/clients/" + url.PathEscape(id) + "/logo"})
+}
+
+func (h *AdminClients) DeleteLogo(c *gin.Context) {
+	if err := h.clients.Update(c.Request.Context(), c.Param("id"), map[string]any{"logo": nil, "logo_type": ""}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "移除图片失败"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

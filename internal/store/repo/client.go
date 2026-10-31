@@ -115,7 +115,7 @@ func (r *ClientRepo) UserInAnyGroup(ctx context.Context, userID string, groupIDs
 
 func (r *ClientRepo) List(ctx context.Context) ([]model.OAuthClient, error) {
 	var clients []model.OAuthClient
-	if err := r.db.WithContext(ctx).Order("client_id").Find(&clients).Error; err != nil {
+	if err := r.db.WithContext(ctx).Omit("logo").Order("name").Find(&clients).Error; err != nil {
 		return nil, fmt.Errorf("repo: 列出应用: %w", err)
 	}
 	return clients, nil

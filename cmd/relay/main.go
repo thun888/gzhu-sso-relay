@@ -151,6 +151,7 @@ func run() error {
 
 	adminHandler := httpapi.NewAdmin(users, groups)
 	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry)
+	router.GET("/api/clients/:id/logo", adminClients.Logo)
 	admin := router.Group("/api/admin", authHandler.RequireAdmin())
 	admin.GET("/users", adminHandler.ListUsers)
 	admin.PATCH("/users/:id", adminHandler.PatchUser)
@@ -171,6 +172,8 @@ func run() error {
 	admin.PUT("/clients/:id/groups", adminClients.SetGroups)
 	admin.PUT("/clients/:id/users", adminClients.SetUsers)
 	admin.POST("/clients/:id/secret", adminClients.RotateSecret)
+	admin.POST("/clients/:id/logo", adminClients.UploadLogo)
+	admin.DELETE("/clients/:id/logo", adminClients.DeleteLogo)
 
 	spa, err := web.Handler()
 	if err != nil {
