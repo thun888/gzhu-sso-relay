@@ -33,6 +33,8 @@ func Open(dsn string) (*gorm.DB, error) {
 }
 
 func Migrate(db *gorm.DB) error {
+	hadPrivate := db.Migrator().HasColumn(&model.OAuthClient{}, "is_private")
+
 	err := db.AutoMigrate(
 		&model.User{},
 		&model.Group{},
@@ -43,12 +45,28 @@ func Migrate(db *gorm.DB) error {
 		&model.ClientAllowedScope{},
 		&model.OAuthAccount{},
 		&model.Consent{},
+		&model.ClientUserGrant{},
 	)
 	if err != nil {
 		return fmt.Errorf("store: 迁移表结构: %w", err)
 	}
 	if err := migrateGroupSource(db); err != nil {
 		return err
+	}
+	if !hadPrivate {
+		if err := backfillClientPrivate(db); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// 应用早期只按用户组限制访问，加入 is_private 后把这些应用一次性标为私有，避免放开。
+func backfillClientPrivate(db *gorm.DB) error {
+	err := db.Exec(`UPDATE oauth_clients SET is_private = true
+		WHERE EXISTS (SELECT 1 FROM group_oauth_clients WHERE group_oauth_clients.client_id = oauth_clients.client_id)`).Error
+	if err != nil {
+		return fmt.Errorf("store: 回填 oauth_clients.is_private: %w", err)
 	}
 	return nil
 }

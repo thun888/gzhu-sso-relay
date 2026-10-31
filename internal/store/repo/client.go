@@ -62,7 +62,7 @@ func (r *ClientRepo) AllowedScopes(ctx context.Context, clientID string) ([]stri
 
 // RestrictedGroups 返回允许访问该应用的用户组；为空表示不限制。
 func (r *ClientRepo) RestrictedGroups(ctx context.Context, clientID string) ([]uint64, error) {
-	var ids []uint64
+	ids := make([]uint64, 0)
 	err := r.db.WithContext(ctx).Model(&model.GroupOAuthClient{}).
 		Where("client_id = ?", clientID).
 		Pluck("group_id", &ids).Error
@@ -70,6 +70,33 @@ func (r *ClientRepo) RestrictedGroups(ctx context.Context, clientID string) ([]u
 		return nil, fmt.Errorf("repo: 查询应用 %s 的用户组: %w", clientID, err)
 	}
 	return ids, nil
+}
+
+// Allows 判断用户能否授权该应用：非私有应用对登录用户全开，私有应用要求命中用户白名单或限定用户组。
+func (r *ClientRepo) Allows(ctx context.Context, client *model.OAuthClient, userID string) (bool, error) {
+	if !client.IsPrivate {
+		return true, nil
+	}
+
+	var granted int64
+	err := r.db.WithContext(ctx).Model(&model.ClientUserGrant{}).
+		Where("client_id = ? AND user_id = ?", client.ClientID, userID).
+		Count(&granted).Error
+	if err != nil {
+		return false, fmt.Errorf("repo: 查询应用 %s 的用户白名单: %w", client.ClientID, err)
+	}
+	if granted > 0 {
+		return true, nil
+	}
+
+	groups, err := r.RestrictedGroups(ctx, client.ClientID)
+	if err != nil {
+		return false, err
+	}
+	if len(groups) == 0 {
+		return false, nil
+	}
+	return r.UserInAnyGroup(ctx, userID, groups)
 }
 
 func (r *ClientRepo) UserInAnyGroup(ctx context.Context, userID string, groupIDs []uint64) (bool, error) {
@@ -116,7 +143,7 @@ func (r *ClientRepo) Update(ctx context.Context, clientID string, fields map[str
 
 func (r *ClientRepo) Delete(ctx context.Context, clientID string) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, target := range []any{&model.ClientAllowedScope{}, &model.GroupOAuthClient{}} {
+		for _, target := range []any{&model.ClientAllowedScope{}, &model.GroupOAuthClient{}, &model.ClientUserGrant{}} {
 			if err := tx.Where("client_id = ?", clientID).Delete(target).Error; err != nil {
 				return err
 			}
@@ -188,6 +215,40 @@ func (r *ClientRepo) SetGroups(ctx context.Context, clientID string, groupIDs []
 	})
 	if err != nil {
 		return fmt.Errorf("repo: 设置应用 %s 的用户组: %w", clientID, err)
+	}
+	return nil
+}
+
+func (r *ClientRepo) UsersOf(ctx context.Context, clientID string) ([]MemberView, error) {
+	users := make([]MemberView, 0)
+	err := r.db.WithContext(ctx).
+		Table("client_user_grants").
+		Select("users.id, users.name, users.email, users.status").
+		Joins("JOIN users ON users.id = client_user_grants.user_id").
+		Where("client_user_grants.client_id = ?", clientID).
+		Order("users.id").
+		Scan(&users).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询应用 %s 的用户白名单: %w", clientID, err)
+	}
+	return users, nil
+}
+
+func (r *ClientRepo) SetUsers(ctx context.Context, clientID string, userIDs []string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("client_id = ?", clientID).Delete(&model.ClientUserGrant{}).Error; err != nil {
+			return err
+		}
+		for _, userID := range userIDs {
+			grant := model.ClientUserGrant{ClientID: clientID, UserID: userID}
+			if err := tx.Create(&grant).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 设置应用 %s 的用户白名单: %w", clientID, err)
 	}
 	return nil
 }

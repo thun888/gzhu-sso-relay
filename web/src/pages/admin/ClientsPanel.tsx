@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { Search, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,14 +10,18 @@ type Scope = { name: string; display_name: string; description: string }
 type Provider = { name: string; display_name: string }
 type Group = { id: number; name: string; code: string }
 
+type Member = { id: string; name: string; email: string; status: number }
+
 type Client = {
   client_id: string
   name: string
   is_public: boolean
+  is_private: boolean
   redirect_urls: string[]
   required_bindings: string[]
   scopes: string[]
   group_ids: number[]
+  users: Member[]
 }
 
 const emptyForm = {
@@ -26,6 +31,7 @@ const emptyForm = {
   scopes: [] as string[],
   bindings: [] as string[],
   isPublic: false,
+  isPrivate: false,
 }
 
 export function ClientsPanel({ onError }: { onError: (message: string) => void }) {
@@ -35,6 +41,8 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
   const [groups, setGroups] = useState<Group[]>([])
   const [created, setCreated] = useState("")
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [userQuery, setUserQuery] = useState("")
+  const [candidates, setCandidates] = useState<Member[]>([])
   const [form, setForm] = useState(emptyForm)
 
   const load = useCallback(async () => {
@@ -58,6 +66,27 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
     load()
   }, [load])
 
+  useEffect(() => {
+    const query = userQuery.trim()
+    const client = clients.find((item) => item.client_id === expanded)
+    if (!client || query.length < 2) {
+      setCandidates([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api<{ users: Member[] }>(
+          `/api/admin/users?limit=8&q=${encodeURIComponent(query)}`,
+        )
+        setCandidates(data.users.filter((user) => !client.users.some((m) => m.id === user.id)))
+      } catch {
+        setCandidates([])
+      }
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [userQuery, expanded, clients])
+
   async function create() {
     try {
       const data = await api<{ client_id: string; client_secret: string }>("/api/admin/clients", {
@@ -72,6 +101,7 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
           scopes: form.scopes,
           required_bindings: form.bindings,
           is_public: form.isPublic,
+          is_private: form.isPrivate,
         }),
       })
       setCreated(
@@ -117,6 +147,43 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
     }
   }
 
+  async function savePrivate(clientID: string, next: boolean) {
+    try {
+      await api(`/api/admin/clients/${encodeURIComponent(clientID)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_private: next }),
+      })
+      await load()
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  async function saveUsers(client: Client, ids: string[]) {
+    try {
+      await api(`/api/admin/clients/${encodeURIComponent(client.client_id)}/users`, {
+        method: "PUT",
+        body: JSON.stringify({ user_ids: ids }),
+      })
+      await load()
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  function addUser(client: Client, user: Member) {
+    setUserQuery("")
+    setCandidates([])
+    saveUsers(client, [...client.users.map((item) => item.id), user.id])
+  }
+
+  function removeUser(client: Client, id: string) {
+    saveUsers(
+      client,
+      client.users.filter((item) => item.id !== id).map((item) => item.id),
+    )
+  }
+
   async function saveBindings(clientID: string, next: string[]) {
     try {
       await api(`/api/admin/clients/${encodeURIComponent(clientID)}`, {
@@ -140,6 +207,7 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
             <tr>
               <th className={thClass}>应用</th>
               <th className={thClass}>类型</th>
+              <th className={thClass}>访问范围</th>
               <th className={thClass}>scope</th>
               <th className={thClass}>强制绑定</th>
               <th className={cn(thClass, "text-right")}>操作</th>
@@ -167,6 +235,11 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
                   </span>
                 </td>
                 <td className={cn(tdClass, "text-muted-foreground")}>
+                  {client.is_private
+                    ? `受限 · ${client.group_ids.length} 组 / ${client.users.length} 人`
+                    : "全员"}
+                </td>
+                <td className={cn(tdClass, "text-muted-foreground")}>
                   {client.scopes.length > 0 ? client.scopes.join(" · ") : "无"}
                 </td>
                 <td className={cn(tdClass, "text-muted-foreground")}>
@@ -175,7 +248,11 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
                 <td className={cn(tdClass, "text-right whitespace-nowrap")}>
                   <button
                     className="text-[12.5px] text-primary hover:underline"
-                    onClick={() => setExpanded(expanded === client.client_id ? null : client.client_id)}
+                    onClick={() => {
+                      setUserQuery("")
+                      setCandidates([])
+                      setExpanded(expanded === client.client_id ? null : client.client_id)
+                    }}
                   >
                     {expanded === client.client_id ? "收起" : "权限"}
                   </button>
@@ -191,7 +268,7 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
             {clients.map((client) =>
               expanded === client.client_id ? (
                 <tr key={`${client.client_id}-detail`}>
-                  <td colSpan={5} className="border-t border-border bg-secondary/30 px-6 py-4">
+                  <td colSpan={6} className="border-t border-border bg-secondary/30 px-6 py-4">
                     <div className="space-y-3">
                       <div>
                         <div className="text-[12px] text-muted-foreground">允许申请的 scope</div>
@@ -238,30 +315,115 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
                       )}
 
                       <div>
-                        <div className="text-[12px] text-muted-foreground">
-                          限定用户组（全不选表示不限制）
-                        </div>
+                        <div className="text-[12px] text-muted-foreground">访问范围</div>
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          {groups.map((group) => (
-                            <Chip
-                              key={group.id}
-                              active={client.group_ids.includes(group.id)}
-                              label={group.name}
-                              onClick={() =>
-                                saveGroups(
-                                  client.client_id,
-                                  client.group_ids.includes(group.id)
-                                    ? client.group_ids.filter((id) => id !== group.id)
-                                    : [...client.group_ids, group.id],
-                                )
-                              }
-                            />
-                          ))}
-                          {groups.length === 0 && (
-                            <span className="text-[12px] text-muted-foreground">还没有用户组</span>
-                          )}
+                          <Chip
+                            active={!client.is_private}
+                            label="所有登录用户"
+                            onClick={() => savePrivate(client.client_id, false)}
+                          />
+                          <Chip
+                            active={client.is_private}
+                            label="仅指定用户与用户组"
+                            onClick={() => savePrivate(client.client_id, true)}
+                          />
                         </div>
                       </div>
+
+                      {client.is_private && (
+                        <div className="space-y-3 rounded-lg border border-border bg-card px-3 py-3">
+                          <div>
+                            <div className="text-[12px] text-muted-foreground">允许访问的用户组</div>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {groups.map((group) => (
+                                <Chip
+                                  key={group.id}
+                                  active={client.group_ids.includes(group.id)}
+                                  label={group.name}
+                                  onClick={() =>
+                                    saveGroups(
+                                      client.client_id,
+                                      client.group_ids.includes(group.id)
+                                        ? client.group_ids.filter((id) => id !== group.id)
+                                        : [...client.group_ids, group.id],
+                                    )
+                                  }
+                                />
+                              ))}
+                              {groups.length === 0 && (
+                                <span className="text-[12px] text-muted-foreground">
+                                  还没有用户组
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-[12px] text-muted-foreground">用户白名单</div>
+                            {client.users.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {client.users.map((user) => (
+                                  <span
+                                    key={user.id}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-border py-0.5 pr-1 pl-2 text-[12px] text-foreground"
+                                  >
+                                    {user.name}
+                                    <span className="font-mono text-[11px] text-muted-foreground">
+                                      {user.id}
+                                    </span>
+                                    <button
+                                      aria-label={`移除 ${user.name}`}
+                                      className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                      onClick={() => removeUser(client, user.id)}
+                                    >
+                                      <X className="size-3" strokeWidth={2} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="relative mt-2 max-w-[320px]">
+                              <Search
+                                className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+                                strokeWidth={1.75}
+                              />
+                              <Input
+                                className="h-8 pl-8 text-[12.5px]"
+                                placeholder="搜索学号或姓名添加"
+                                value={userQuery}
+                                onChange={(event) => setUserQuery(event.target.value)}
+                              />
+                            </div>
+
+                            {candidates.length > 0 && (
+                              <div className="mt-1.5 max-w-[320px] overflow-hidden rounded-md border border-border">
+                                {candidates.map((user) => (
+                                  <button
+                                    key={user.id}
+                                    onClick={() => addUser(client, user)}
+                                    className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-secondary"
+                                  >
+                                    <span className="min-w-0 text-[12.5px] text-foreground">
+                                      {user.name}
+                                      <span className="ml-2 font-mono text-[11.5px] text-muted-foreground">
+                                        {user.id}
+                                      </span>
+                                    </span>
+                                    <span className="shrink-0 text-[12px] text-primary">添加</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {client.users.length === 0 && client.group_ids.length === 0 && (
+                              <p className="mt-2 text-[11.5px] text-destructive">
+                                白名单为空，当前没有任何账号能授权该应用
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="text-[12px] text-muted-foreground">
                         回调地址：{client.redirect_urls.join("，") || "未设置"}
@@ -327,6 +489,16 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
             </div>
           </FormRow>
         )}
+        <FormRow label="访问范围" hint="私有应用只有白名单里的用户或用户组能授权">
+          <label className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={form.isPrivate}
+              onChange={(event) => setForm({ ...form, isPrivate: event.target.checked })}
+            />
+            私有应用
+          </label>
+        </FormRow>
         <FormRow label="客户端类型">
           <label className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
             <input

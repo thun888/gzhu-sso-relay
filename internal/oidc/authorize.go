@@ -56,18 +56,13 @@ func (p *Provider) Authorize(c *gin.Context) {
 		return
 	}
 
-	groups, err := p.clients.RestrictedGroups(ctx, client.ClientID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
-		return
-	}
-	permitted, err := p.clients.UserInAnyGroup(ctx, user.ID, groups)
+	permitted, err := p.clients.Allows(ctx, client, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
 	if !permitted {
-		redirectError(c, redirectURI, state, "access_denied", "当前用户组无权访问该应用")
+		redirectError(c, redirectURI, state, "access_denied", "当前账号无权访问该应用")
 		return
 	}
 

@@ -17,21 +17,24 @@ type AdminClients struct {
 	clients  *repo.ClientRepo
 	scopes   *repo.ScopeRepo
 	groups   *repo.GroupRepo
+	users    *repo.UserRepo
 	registry *binding.Registry
 }
 
-func NewAdminClients(clients *repo.ClientRepo, scopes *repo.ScopeRepo, groups *repo.GroupRepo, registry *binding.Registry) *AdminClients {
-	return &AdminClients{clients: clients, scopes: scopes, groups: groups, registry: registry}
+func NewAdminClients(clients *repo.ClientRepo, scopes *repo.ScopeRepo, groups *repo.GroupRepo, users *repo.UserRepo, registry *binding.Registry) *AdminClients {
+	return &AdminClients{clients: clients, scopes: scopes, groups: groups, users: users, registry: registry}
 }
 
 type clientView struct {
-	ClientID         string   `json:"client_id"`
-	Name             string   `json:"name"`
-	IsPublic         bool     `json:"is_public"`
-	RedirectURLs     []string `json:"redirect_urls"`
-	RequiredBindings []string `json:"required_bindings"`
-	Scopes           []string `json:"scopes"`
-	GroupIDs         []uint64 `json:"group_ids"`
+	ClientID         string            `json:"client_id"`
+	Name             string            `json:"name"`
+	IsPublic         bool              `json:"is_public"`
+	IsPrivate        bool              `json:"is_private"`
+	RedirectURLs     []string          `json:"redirect_urls"`
+	RequiredBindings []string          `json:"required_bindings"`
+	Scopes           []string          `json:"scopes"`
+	GroupIDs         []uint64          `json:"group_ids"`
+	Users            []repo.MemberView `json:"users"`
 }
 
 func (h *AdminClients) List(c *gin.Context) {
@@ -55,14 +58,21 @@ func (h *AdminClients) List(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询应用用户组失败"})
 			return
 		}
+		users, err := h.clients.UsersOf(ctx, client.ClientID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询应用用户白名单失败"})
+			return
+		}
 		views = append(views, clientView{
 			ClientID:         client.ClientID,
 			Name:             client.Name,
 			IsPublic:         client.IsPublic,
+			IsPrivate:        client.IsPrivate,
 			RedirectURLs:     client.RedirectURLs,
 			RequiredBindings: client.RequiredBindings,
 			Scopes:           scopes,
 			GroupIDs:         groupIDs,
+			Users:            users,
 		})
 	}
 
@@ -77,6 +87,7 @@ type clientCreate struct {
 	Scopes           []string `json:"scopes"`
 	RequiredBindings []string `json:"required_bindings"`
 	IsPublic         bool     `json:"is_public"`
+	IsPrivate        bool     `json:"is_private"`
 }
 
 func (h *AdminClients) Create(c *gin.Context) {
@@ -122,6 +133,7 @@ func (h *AdminClients) Create(c *gin.Context) {
 		RedirectURLs:     req.RedirectURLs,
 		RequiredBindings: req.RequiredBindings,
 		IsPublic:         req.IsPublic,
+		IsPrivate:        req.IsPrivate,
 	}
 	if err := h.clients.Create(ctx, &client); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "创建应用失败，client_id 可能已存在"})
@@ -143,6 +155,7 @@ type clientPatch struct {
 	RedirectURLs     *[]string `json:"redirect_urls"`
 	RequiredBindings *[]string `json:"required_bindings"`
 	IsPublic         *bool     `json:"is_public"`
+	IsPrivate        *bool     `json:"is_private"`
 }
 
 func (h *AdminClients) Patch(c *gin.Context) {
@@ -174,6 +187,9 @@ func (h *AdminClients) Patch(c *gin.Context) {
 	}
 	if req.IsPublic != nil {
 		fields["is_public"] = *req.IsPublic
+	}
+	if req.IsPrivate != nil {
+		fields["is_private"] = *req.IsPrivate
 	}
 	if len(fields) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "没有需要更新的字段"})
@@ -239,6 +255,48 @@ func (h *AdminClients) SetGroups(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"group_ids": req.GroupIDs})
+}
+
+func (h *AdminClients) SetUsers(c *gin.Context) {
+	var req struct {
+		UserIDs []string `json:"user_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式不正确"})
+		return
+	}
+
+	unique := make([]string, 0, len(req.UserIDs))
+	seen := make(map[string]struct{}, len(req.UserIDs))
+	for _, id := range req.UserIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	ctx := c.Request.Context()
+	missing, err := h.users.MissingUsers(ctx, unique)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "校验用户失败"})
+		return
+	}
+	if len(missing) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "以下用户不存在", "user_ids": missing})
+		return
+	}
+
+	clientID := c.Param("id")
+	if err := h.clients.SetUsers(ctx, clientID, unique); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置用户白名单失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"user_ids": unique})
 }
 
 func (h *AdminClients) Scopes(c *gin.Context) {

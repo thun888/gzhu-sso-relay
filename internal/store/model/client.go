@@ -9,6 +9,8 @@ type OAuthClient struct {
 	// RequiredBindings 列出授权前必须完成的第三方账号绑定，如 ["gitea"]。
 	RequiredBindings []string `gorm:"type:jsonb;serializer:json"`
 	IsPublic         bool     `gorm:"not null;default:false"`
+	// IsPrivate 为 true 时只有用户白名单或限定用户组里的账号能授权。
+	IsPrivate bool `gorm:"not null;default:false"`
 	Timestamps
 }
 
@@ -23,3 +25,13 @@ type GroupOAuthClient struct {
 }
 
 func (GroupOAuthClient) TableName() string { return "group_oauth_clients" }
+
+// ClientUserGrant 是应用的用户白名单，只在 IsPrivate 为 true 时生效。
+type ClientUserGrant struct {
+	ID       uint64 `gorm:"primaryKey"`
+	ClientID string `gorm:"size:64;not null;uniqueIndex:idx_client_user_grants,priority:1"`
+	UserID   string `gorm:"size:32;not null;uniqueIndex:idx_client_user_grants,priority:2;index"`
+	Timestamps
+}
+
+func (ClientUserGrant) TableName() string { return "client_user_grants" }
