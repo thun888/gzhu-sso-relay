@@ -170,6 +170,7 @@ func run() error {
 	admin.PUT("/clients/:id/scopes", adminClients.SetScopes)
 	admin.PUT("/clients/:id/groups", adminClients.SetGroups)
 	admin.PUT("/clients/:id/users", adminClients.SetUsers)
+	admin.POST("/clients/:id/secret", adminClients.RotateSecret)
 
 	spa, err := web.Handler()
 	if err != nil {

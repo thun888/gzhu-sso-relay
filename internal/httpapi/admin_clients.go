@@ -203,6 +203,32 @@ func (h *AdminClients) Patch(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *AdminClients) RotateSecret(c *gin.Context) {
+	ctx := c.Request.Context()
+	clientID := c.Param("id")
+
+	client, err := h.clients.ByClientID(ctx, clientID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "应用不存在"})
+		return
+	}
+	if client.IsPublic {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "公开客户端没有密钥"})
+		return
+	}
+
+	plain, hash, err := cryptox.NewSecret()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成密钥失败"})
+		return
+	}
+	if err := h.clients.Update(ctx, clientID, map[string]any{"secret_hash": hash}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新密钥失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"client_id": clientID, "client_secret": plain})
+}
+
 func (h *AdminClients) Delete(c *gin.Context) {
 	if err := h.clients.Delete(c.Request.Context(), c.Param("id")); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除应用失败"})

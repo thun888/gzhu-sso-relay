@@ -4,7 +4,7 @@ import { Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { Chip, Empty, FormRow, Panel, api, tdClass, thClass } from "./shared"
+import { Chip, ConfirmDialog, Empty, FormRow, Panel, api, tdClass, thClass } from "./shared"
 
 type Scope = { name: string; display_name: string; description: string }
 type Provider = { name: string; display_name: string }
@@ -43,6 +43,8 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
   const [expanded, setExpanded] = useState<string | null>(null)
   const [userQuery, setUserQuery] = useState("")
   const [candidates, setCandidates] = useState<Member[]>([])
+  const [rotated, setRotated] = useState("")
+  const [pendingRotate, setPendingRotate] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
 
   const load = useCallback(async () => {
@@ -147,6 +149,19 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
     }
   }
 
+  async function rotateSecret(clientID: string) {
+    try {
+      const data = await api<{ client_id: string; client_secret: string }>(
+        `/api/admin/clients/${encodeURIComponent(clientID)}/secret`,
+        { method: "POST" },
+      )
+      setPendingRotate(null)
+      setRotated(`${data.client_id}　${data.client_secret}`)
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
   async function savePrivate(clientID: string, next: boolean) {
     try {
       await api(`/api/admin/clients/${encodeURIComponent(clientID)}`, {
@@ -202,6 +217,23 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
         title="接入应用"
         description={`共 ${clients.length} 个 · 点击「权限」即时生效，无需保存`}
       >
+        {rotated && (
+          <div className="flex items-start justify-between gap-4 border-b border-border bg-primary/5 px-6 py-3">
+            <div className="min-w-0">
+              <div className="text-[12px] text-muted-foreground">
+                密钥已重置，只显示这一次，请立即保存
+              </div>
+              <div className="mt-1 font-mono text-[12.5px] break-all text-primary">{rotated}</div>
+            </div>
+            <button
+              className="shrink-0 text-[12px] text-muted-foreground hover:text-foreground"
+              onClick={() => setRotated("")}
+            >
+              关闭
+            </button>
+          </div>
+        )}
+
         <table className="w-full">
           <thead>
             <tr>
@@ -256,6 +288,14 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
                   >
                     {expanded === client.client_id ? "收起" : "权限"}
                   </button>
+                  {!client.is_public && (
+                    <button
+                      className="ml-4 text-[12.5px] text-muted-foreground hover:underline"
+                      onClick={() => setPendingRotate(client.client_id)}
+                    >
+                      重置密钥
+                    </button>
+                  )}
                   <button
                     className="ml-4 text-[12.5px] text-muted-foreground hover:underline"
                     onClick={() => remove(client.client_id)}
@@ -527,6 +567,16 @@ export function ClientsPanel({ onError }: { onError: (message: string) => void }
           </Button>
         </div>
       </Panel>
+
+      <ConfirmDialog
+        open={pendingRotate !== null}
+        title="重置客户端密钥"
+        message={`「${pendingRotate ?? ""}」当前的密钥会立即失效，正在使用它的服务需要同步更新为新密钥。新密钥只显示一次。`}
+        confirmLabel="重置"
+        danger
+        onCancel={() => setPendingRotate(null)}
+        onConfirm={() => pendingRotate && rotateSecret(pendingRotate)}
+      />
     </div>
   )
 }
