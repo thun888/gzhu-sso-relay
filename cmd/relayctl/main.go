@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -50,6 +52,8 @@ func main() {
 		deleteClient(ctx, db, args[2:])
 	case "user promote":
 		promoteUser(ctx, db, args[2:])
+	case "user import":
+		importUsers(ctx, db, cfg, args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -184,6 +188,132 @@ func promoteUser(ctx context.Context, db *gorm.DB, args []string) {
 	fmt.Printf("%s 已设为管理员\n", *id)
 }
 
+// 本地校验必然失败（不是合法 PHC 格式），预导入用户首次登录会走上游认证并覆盖此值。
+const placeholderHash = "!preimport"
+
+func importUsers(ctx context.Context, db *gorm.DB, cfg *config.Config, args []string) {
+	fs := flag.NewFlagSet("user import", flag.ExitOnError)
+	groupCode := fs.String("group", "", "导入后加入的用户组 code")
+	_ = fs.Parse(args)
+	if fs.NArg() < 1 {
+		die(fmt.Errorf("需要提供用户列表文件路径，- 表示标准输入"))
+	}
+
+	type entry struct {
+		id   string
+		name string
+	}
+	var entries []entry
+	seen := make(map[string]struct{})
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if path := fs.Arg(0); path != "-" {
+		f, err := os.Open(path)
+		if err != nil {
+			die(fmt.Errorf("打开文件失败: %w", err))
+		}
+		defer f.Close()
+		scanner = bufio.NewScanner(f)
+	}
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		id, name := line, ""
+		if i := strings.IndexByte(line, ','); i >= 0 {
+			id, name = strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:])
+		}
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		entries = append(entries, entry{id: id, name: name})
+	}
+	if err := scanner.Err(); err != nil {
+		die(fmt.Errorf("读取用户列表失败: %w", err))
+	}
+	if len(entries) == 0 {
+		die(fmt.Errorf("用户列表为空"))
+	}
+
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.id)
+	}
+	var found []string
+	if err := db.WithContext(ctx).Model(&model.User{}).Where("id IN ?", ids).Pluck("id", &found).Error; err != nil {
+		die(fmt.Errorf("查询已有用户失败: %w", err))
+	}
+	existing := make(map[string]struct{}, len(found))
+	for _, id := range found {
+		existing[id] = struct{}{}
+	}
+
+	var users []model.User
+	var noDomain []string
+	for _, e := range entries {
+		if _, ok := existing[e.id]; ok {
+			continue
+		}
+		suffix, ok := cfg.Server.EmailDomains.Suffix(e.id)
+		if !ok {
+			noDomain = append(noDomain, e.id)
+			continue
+		}
+		name := e.name
+		if name == "" {
+			name = e.id
+		}
+		users = append(users, model.User{
+			ID:           e.id,
+			Name:         name,
+			PasswordHash: placeholderHash,
+			Email:        e.id + "@" + suffix,
+			Type:         model.UserTypeNormal,
+			Status:       model.UserStatusActive,
+		})
+	}
+	if len(users) > 0 {
+		if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&users).Error; err != nil {
+			die(fmt.Errorf("写入用户失败: %w", err))
+		}
+	}
+
+	joined := 0
+	if *groupCode != "" {
+		var g model.Group
+		err := db.WithContext(ctx).Where("code = ?", *groupCode).First(&g).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			die(fmt.Errorf("用户组 %s 不存在", *groupCode))
+		}
+		if err != nil {
+			die(fmt.Errorf("查询用户组失败: %w", err))
+		}
+		if g.IsUpstream {
+			die(fmt.Errorf("用户组 %s 由上游同步生成，不能手工维护成员", g.Code))
+		}
+		links := make([]model.UserGroup, 0, len(entries))
+		for _, e := range entries {
+			links = append(links, model.UserGroup{UserID: e.id, GroupID: g.ID})
+		}
+		if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&links).Error; err != nil {
+			die(fmt.Errorf("写入用户组成员失败: %w", err))
+		}
+		joined = len(links)
+		fmt.Printf("已把 %d 个用户加入组 %s\n", joined, g.Code)
+	}
+
+	fmt.Printf("共 %d 条：新建 %d，已存在 %d，无邮箱后缀跳过 %d\n",
+		len(entries), len(users), len(entries)-len(users)-len(noDomain), len(noDomain))
+	if len(noDomain) > 0 {
+		fmt.Printf("无邮箱后缀: %s\n", strings.Join(noDomain, ", "))
+	}
+}
+
 // splitConfigFlag 把 -config 从参数里摘出来，其余参数保持原有顺序。
 func splitConfigFlag(args []string) ([]string, string) {
 	path := "config.yaml"
@@ -228,6 +358,10 @@ func usage() {
   relayctl client list
   relayctl client delete -id <client_id>
   relayctl user promote -id <学号> [-revoke]
+  relayctl user import <文件|-> [-group <组code>]
+
+    每行一个学号，可带姓名：20240001,张三。# 开头的行跳过。
+    预导入的用户本地密码不可用，首次登录走上游认证并补全资料。
 
 -config 缺省为当前目录的 config.yaml，只需其中 database.dsn 可用。`)
 }
