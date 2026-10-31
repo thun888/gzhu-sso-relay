@@ -243,16 +243,16 @@ export function ClientDetail({
           <div className="flex flex-col gap-5 sm:flex-row">
             <div className="shrink-0">
               <div className="text-[12px] text-muted-foreground">应用图标</div>
-              <div className="mt-1.5 flex items-end gap-3">
+              <div className="mt-1.5 flex flex-col items-start gap-2">
                 <Logo client={client} size={72} />
-                <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-3">
                   <Button
                     variant="outline"
-                    className="h-8 w-auto px-3"
+                    className="h-7 w-auto px-2.5 text-[12px]"
                     disabled={uploading}
                     onClick={() => logoInput.current?.click()}
                   >
-                    <Upload className="size-3.5" strokeWidth={1.75} />
+                    <Upload className="size-3" strokeWidth={1.75} />
                     {uploading ? "上传中" : "上传"}
                   </Button>
                   {client.logo_url && (
@@ -260,7 +260,7 @@ export function ClientDetail({
                       className="text-[11.5px] text-muted-foreground hover:text-destructive"
                       onClick={removeLogo}
                     >
-                      移除图标
+                      移除
                     </button>
                   )}
                 </div>
