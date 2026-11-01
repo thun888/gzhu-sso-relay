@@ -50,6 +50,12 @@ func (h *Auth) Login(c *gin.Context) {
 		return
 	}
 
+	req.Username = strings.TrimSpace(req.Username)
+	if msg := usernameIssue(req.Username); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
 	ctx := c.Request.Context()
 	ip := c.ClientIP()
 	guard := h.captcha.Required(ctx, ip)
@@ -179,6 +185,27 @@ func (h *Auth) resolve(c *gin.Context) (*model.User, error) {
 
 func toUserView(u *model.User) userView {
 	return userView{ID: u.ID, Name: u.Name, Email: u.Email, Type: u.Type}
+}
+
+func usernameIssue(id string) string {
+	switch {
+	case id == "":
+		return "用户名与密码不能为空"
+	case strings.Contains(id, "@"):
+		return "请填写学号或教工号，不要输入邮箱"
+	case !digitsOnly(id):
+		return "学号或教工号只能包含数字"
+	}
+	return ""
+}
+
+func digitsOnly(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func bearerToken(c *gin.Context) string {
