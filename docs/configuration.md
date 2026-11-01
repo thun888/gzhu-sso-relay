@@ -117,6 +117,8 @@ login_footer:
 
 页脚显示在登录卡片下方并居中。`enabled` 为 `false`，或 `text` 去掉空白后为空时不显示，登录卡片的居中位置不变。
 
+`text` 里的 `{{commit}}` 会替换为构建时的短提交号，由 `build.sh` 注入；直接 `go build` 或 `go run` 时为 `dev`。例如 `text: "© 广州大学 · {{commit}}"`。
+
 ## secret_key
 
 必填，32 字节密钥，支持 base64 或 hex 编码。

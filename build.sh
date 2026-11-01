@@ -70,8 +70,14 @@ fi
 
 export CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch"
 
-echo "构建 $goos/$goarch -> $out"
+commit=$(git rev-parse --short HEAD 2>/dev/null || true)
+ldflags="-s -w"
+if [ -n "$commit" ]; then
+	ldflags="$ldflags -X github.com/thun888/gzhu-sso-relay/internal/build.Commit=$commit"
+fi
+
+echo "构建 $goos/$goarch (commit ${commit:-dev}) -> $out"
 for name in relay relayctl casprobe; do
-	go build -trimpath -ldflags "-s -w" -o "$out/$name$ext" "./cmd/$name"
+	go build -trimpath -ldflags "$ldflags" -o "$out/$name$ext" "./cmd/$name"
 	echo "  $out/$name$ext"
 done

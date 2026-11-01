@@ -2,11 +2,15 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/build"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 )
+
+const commitPlaceholder = "{{commit}}"
 
 // PublicConfig 输出登录页渲染所需的公开配置，不含任何敏感字段。
 func PublicConfig(server config.Server, captcha *CaptchaPolicy, qrLogin bool) gin.HandlerFunc {
@@ -22,7 +26,7 @@ func PublicConfig(server config.Server, captcha *CaptchaPolicy, qrLogin bool) gi
 			},
 			"login_footer": gin.H{
 				"enabled": server.LoginFooter.Enabled,
-				"text":    server.LoginFooter.Text,
+				"text":    strings.ReplaceAll(server.LoginFooter.Text, commitPlaceholder, build.Commit),
 			},
 			"captcha": gin.H{
 				"enabled":    captcha.Enabled(),
