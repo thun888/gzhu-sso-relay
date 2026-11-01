@@ -165,7 +165,8 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 
 - 按学号或姓名搜索，界面最多展示 100 条，接口上限 200 条。
 - 只展示已经登录过一次的账号。
-- 可切换管理员身份，可禁用或启用账号。
+- 每行末尾的「⋯」打开用户管理弹窗，可修改姓名与邮箱，也可切换管理员身份、禁用或启用账号。
+- 管理员修改邮箱直接生效，不经过确认邮件，只校验格式与是否与其他账号重复。
 
 禁用后，该账号无法再次登录，新的授权请求会被拒绝，已建立的会话会被立即清空。
 已经签发的 access token 在 1 小时有效期内仍可能被下游离线校验通过，在线校验 userinfo 会立即失效。
@@ -294,7 +295,7 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/admin/users?q=&limit=` | 搜索用户 |
-| PATCH | `/api/admin/users/<id>` | 修改 `type` 或 `status` |
+| PATCH | `/api/admin/users/<id>` | 修改 `name`、`email`、`type` 或 `status` |
 | GET | `/api/admin/groups` | 用户组列表 |
 | POST | `/api/admin/groups` | 新建用户组 |
 | PATCH | `/api/admin/groups/<id>` | 修改名称、标识、父组 |

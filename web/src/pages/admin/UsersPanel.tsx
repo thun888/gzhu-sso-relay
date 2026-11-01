@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
-import { RotateCcw, Search } from "lucide-react"
+import { MoreHorizontal, RotateCcw, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Modal } from "@/components/ui/modal"
 import { cn } from "@/lib/utils"
 import type { Group } from "./client-types"
 import { ConfirmDialog, Empty, Panel, Select, api, groupPath } from "./shared"
@@ -20,7 +21,7 @@ type Filters = { q: string; type: string; status: string; group: string }
 
 type Pending = {
   id: string
-  body: Record<string, number>
+  body: Record<string, string | number>
   title: string
   message: string
   label: string
@@ -47,8 +48,13 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState<Pending | null>(null)
+  const [manage, setManage] = useState<AdminUser | null>(null)
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [saveMsg, setSaveMsg] = useState("")
+  const [saving, setSaving] = useState(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<AdminUser[]> => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ limit: "100" })
@@ -59,8 +65,10 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
 
       const data = await api<{ users: AdminUser[] }>(`/api/admin/users?${params}`)
       setUsers(data.users)
+      return data.users
     } catch (err) {
       onError((err as Error).message)
+      return []
     } finally {
       setLoading(false)
     }
@@ -76,16 +84,60 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
       .catch(() => undefined)
   }, [])
 
-  async function patch(id: string, body: Record<string, number>) {
+  async function patch(id: string, body: Record<string, string | number>) {
     try {
       await api(`/api/admin/users/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       })
       setPending(null)
-      await load()
+      const fresh = await load()
+      if (manage) {
+        const updated = fresh.find((item) => item.id === manage.id)
+        if (updated) {
+          setManage(updated)
+          setName(updated.name)
+          setEmail(updated.email)
+        }
+      }
     } catch (err) {
       onError((err as Error).message)
+    }
+  }
+
+  function openManage(user: AdminUser) {
+    setManage(user)
+    setName(user.name)
+    setEmail(user.email)
+    setSaveMsg("")
+  }
+
+  async function saveProfile() {
+    if (!manage) return
+    setSaving(true)
+    setSaveMsg("")
+    try {
+      const body: Record<string, string> = {}
+      if (name.trim() !== manage.name) body.name = name.trim()
+      if (email.trim() !== manage.email) body.email = email.trim()
+      if (Object.keys(body).length === 0) return
+
+      await api(`/api/admin/users/${encodeURIComponent(manage.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      })
+      const users = await load()
+      const updated = users.find((item) => item.id === manage.id)
+      if (updated) {
+        setManage(updated)
+        setName(updated.name)
+        setEmail(updated.email)
+      }
+      setSaveMsg("已保存")
+    } catch (err) {
+      setSaveMsg((err as Error).message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -197,7 +249,7 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
           <col className="w-[92px]" />
           <col className="w-[84px]" />
           <col className="w-[148px]" />
-          <col className="w-[180px]" />
+          <col className="w-[64px]" />
         </colgroup>
         <thead>
           <tr>
@@ -236,24 +288,15 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
               <td className={cn(cellClass, "text-[12.5px] text-muted-foreground")}>
                 {formatTime(user.last_login_at)}
               </td>
-              <td className={cn(cellClass, "text-right whitespace-nowrap")}>
+              <td className={cn(cellClass, "text-right")}>
                 <button
-                  className={cn(
-                    "text-[12.5px] hover:underline",
-                    user.type === 1 ? "text-muted-foreground" : "text-primary",
-                  )}
-                  onClick={() => toggleAdmin(user)}
+                  type="button"
+                  title="管理用户"
+                  aria-label="管理用户"
+                  onClick={() => openManage(user)}
+                  className="inline-flex rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
-                  {user.type === 1 ? "取消管理员" : "设为管理员"}
-                </button>
-                <button
-                  className={cn(
-                    "ml-4 text-[12.5px] hover:underline",
-                    user.status === 1 ? "text-primary" : "text-destructive",
-                  )}
-                  onClick={() => toggleStatus(user)}
-                >
-                  {user.status === 1 ? "启用" : "禁用"}
+                  <MoreHorizontal className="size-4" strokeWidth={1.75} />
                 </button>
               </td>
             </tr>
@@ -264,6 +307,89 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
       {!loading && users.length === 0 && (
         <Empty>{filtered ? "没有匹配的用户" : "还没有用户"}</Empty>
       )}
+
+      <Modal
+        open={manage !== null}
+        title="管理用户"
+        description={manage ? `${manage.id} · ${manage.name}` : ""}
+        onClose={() => setManage(null)}
+        footer={
+          <Button variant="outline" className="h-9 w-auto px-4" onClick={() => setManage(null)}>
+            关闭
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block">
+            <span className="text-[12.5px] text-muted-foreground">姓名</span>
+            <Input
+              className="mt-1.5 h-9"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="text-[12.5px] text-muted-foreground">邮箱</span>
+            <Input
+              className="mt-1.5 h-9"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              管理员可直接改写完整邮箱，仅校验格式与是否重复。
+            </p>
+          </label>
+
+          <div className="flex items-center gap-2">
+            <Button
+              className="h-9 w-auto px-4"
+              disabled={saving || name.trim() === manage?.name && email.trim() === manage?.email}
+              onClick={saveProfile}
+            >
+              {saving ? "保存中" : "保存资料"}
+            </Button>
+            {saveMsg && <span className="text-[12px] text-muted-foreground">{saveMsg}</span>}
+          </div>
+
+          <div className="space-y-2 border-t border-border pt-4">
+            <div className="text-[12px] text-muted-foreground">账号操作</div>
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[13px] text-foreground">管理员权限</div>
+                <div className="text-[12px] text-muted-foreground">
+                  {manage?.type === 1 ? "当前拥有管理后台权限" : "当前为普通用户"}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="h-8 w-auto shrink-0 px-3.5"
+                disabled={!manage}
+                onClick={() => manage && toggleAdmin(manage)}
+              >
+                {manage?.type === 1 ? "取消管理员" : "设为管理员"}
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[13px] text-foreground">账号状态</div>
+                <div className="text-[12px] text-muted-foreground">
+                  {manage?.status === 1 ? "已禁用，无法登录" : "正常"}
+                </div>
+              </div>
+              <Button
+                variant={manage?.status === 1 ? "outline" : "destructive"}
+                className="h-8 w-auto shrink-0 px-3.5"
+                disabled={!manage}
+                onClick={() => manage && toggleStatus(manage)}
+              >
+                {manage?.status === 1 ? "启用" : "禁用"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={pending !== null}

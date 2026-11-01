@@ -42,8 +42,10 @@ type groupView struct {
 }
 
 type userPatch struct {
-	Type   *int16 `json:"type"`
-	Status *int16 `json:"status"`
+	Name   *string `json:"name"`
+	Email  *string `json:"email"`
+	Type   *int16  `json:"type"`
+	Status *int16  `json:"status"`
 }
 
 type groupCreate struct {
@@ -113,7 +115,36 @@ func (h *Admin) PatchUser(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
 	fields := map[string]any{}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || len(name) > 64 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "姓名不能为空且不超过 64 个字符"})
+			return
+		}
+		fields["name"] = name
+	}
+	// 管理员修正是绕过别名规范的手段，只校验格式与占用，不限制后缀。
+	if req.Email != nil {
+		email := strings.ToLower(strings.TrimSpace(*req.Email))
+		if msg := adminEmailIssue(email); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		taken, err := h.users.EmailTaken(ctx, email, id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询邮箱占用失败"})
+			return
+		}
+		if taken {
+			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已被其他账号使用"})
+			return
+		}
+		fields["email"] = email
+	}
 	if req.Type != nil {
 		if *req.Type != model.UserTypeNormal && *req.Type != model.UserTypeAdmin {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "type 只能为 0 或 1"})
@@ -133,22 +164,36 @@ func (h *Admin) PatchUser(c *gin.Context) {
 		return
 	}
 
-	if err := h.users.UpdateFlags(c.Request.Context(), c.Param("id"), fields); err != nil {
+	if err := h.users.UpdateFlags(ctx, id, fields); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户失败"})
 		return
 	}
 	// 禁用后立即失效该用户所有会话与刷新令牌，否则重新启用时旧凭据会复活。
 	if req.Status != nil && *req.Status == model.UserStatusDisabled {
-		if _, err := h.sessions.RevokeAll(c.Request.Context(), c.Param("id")); err != nil {
+		if _, err := h.sessions.RevokeAll(ctx, id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "账号已禁用，但清理会话失败"})
 			return
 		}
-		if _, err := h.refresh.RevokeUser(c.Request.Context(), c.Param("id")); err != nil {
+		if _, err := h.refresh.RevokeUser(ctx, id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "账号已禁用，但清理刷新令牌失败"})
 			return
 		}
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func adminEmailIssue(email string) string {
+	if len(email) > 128 {
+		return "邮箱长度不能超过 128 个字符"
+	}
+	if strings.Count(email, "@") != 1 || strings.ContainsAny(email, " \t\r\n") {
+		return "邮箱格式不正确"
+	}
+	alias, domain, _ := strings.Cut(email, "@")
+	if alias == "" || domain == "" {
+		return "邮箱格式不正确"
+	}
+	return ""
 }
 
 func (h *Admin) ListGroups(c *gin.Context) {
