@@ -75,6 +75,42 @@ func (c *Client) Bootstrap(ctx context.Context) error {
 	return nil
 }
 
+// ServiceURL 沿门户首页的跳转链取出统一认证使用的 service 标识。
+// 需要向统一认证自证身份时用它申请票据，应用注册的 service 只能从跳转里拿到。
+func (c *Client) ServiceURL(ctx context.Context) (string, error) {
+	hc := *c.HTTP
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	endpoint := strings.TrimSuffix(c.BaseURL, "/") + "/"
+	for i := 0; i < 4; i++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("User-Agent", c.agent())
+
+		resp, err := hc.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("portal: 跟踪门户跳转: %w", err)
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		resp.Body.Close()
+
+		if resp.StatusCode < 300 || resp.StatusCode > 399 {
+			return "", errors.New("portal: 门户首页未跳转到统一认证")
+		}
+		next, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
+		if err != nil {
+			return "", fmt.Errorf("portal: 解析门户跳转: %w", err)
+		}
+		if service := next.Query().Get("service"); service != "" {
+			return service, nil
+		}
+		endpoint = next.String()
+	}
+	return "", errors.New("portal: 门户跳转链中没有 service 参数")
+}
+
 func (c *Client) Profile(ctx context.Context) (Profile, error) {
 	endpoint := strings.TrimSuffix(c.BaseURL, "/") + profilePath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader("{}"))

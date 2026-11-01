@@ -80,6 +80,52 @@ func (h *Auth) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, toUserView(result.User))
 }
 
+type qrChallengeView struct {
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// StartQRLogin 生成一次上游扫码登录，返回前端渲染二维码所需的地址。
+func (h *Auth) StartQRLogin(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+
+	challenge, err := h.service.StartQRLogin(c.Request.Context(), c.Request.UserAgent())
+	if err != nil {
+		log.Printf("生成扫码登录二维码失败 ip=%s: %v", c.ClientIP(), err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成二维码失败，请改用账号密码登录"})
+		return
+	}
+
+	c.JSON(http.StatusOK, qrChallengeView{
+		ID:        challenge.ID,
+		URL:       challenge.URL,
+		ExpiresIn: int(challenge.ExpiresIn / time.Second),
+	})
+}
+
+// PollQRLogin 查询扫码状态，确认后直接下发会话 cookie。
+func (h *Auth) PollQRLogin(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+
+	result, err := h.service.PollQRLogin(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		status, message := qrError(err)
+		if status != http.StatusGone {
+			log.Printf("扫码登录失败 ip=%s: %v", c.ClientIP(), err)
+		}
+		c.JSON(status, gin.H{"status": "failed", "error": message})
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "pending"})
+		return
+	}
+
+	setSessionCookie(c, result.Token, int(h.service.SessionTTL()/time.Second), h.secure)
+	c.JSON(http.StatusOK, gin.H{"status": "confirmed", "user": toUserView(result.User)})
+}
+
 func (h *Auth) Logout(c *gin.Context) {
 	token, _ := c.Cookie(sessionCookie)
 	if token == "" {
@@ -147,6 +193,8 @@ func authError(err error) (int, string) {
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		return http.StatusUnauthorized, "账号或密码错误"
+	case errors.Is(err, auth.ErrAccountDisabled):
+		return http.StatusForbidden, "该账号已被停用"
 	case errors.Is(err, auth.ErrTooManyAttempts):
 		return http.StatusTooManyRequests, "尝试次数过多，请稍后再试"
 	case errors.Is(err, auth.ErrUpstreamLocked):
@@ -159,6 +207,23 @@ func authError(err error) (int, string) {
 		return http.StatusInternalServerError, "该学号没有匹配的邮箱域名配置"
 	default:
 		return http.StatusInternalServerError, "登录失败"
+	}
+}
+
+func qrError(err error) (int, string) {
+	switch {
+	case errors.Is(err, auth.ErrQRSessionInvalid):
+		return http.StatusGone, "二维码已失效，请刷新后重试"
+	case errors.Is(err, auth.ErrQRUnlinked):
+		return http.StatusConflict, "该微信还未关联统一身份认证账号，请先用账号密码登录一次"
+	case errors.Is(err, auth.ErrAccountDisabled):
+		return http.StatusForbidden, "该账号已被停用"
+	case errors.Is(err, auth.ErrNoEmailDomain):
+		return http.StatusInternalServerError, "该账号没有匹配的邮箱域名配置"
+	case errors.Is(err, auth.ErrUpstreamUnavailable):
+		return http.StatusBadGateway, "上游认证服务不可用，请改用账号密码登录"
+	default:
+		return http.StatusInternalServerError, "扫码登录失败，请稍后重试"
 	}
 }
 

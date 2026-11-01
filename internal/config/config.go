@@ -112,6 +112,10 @@ type Upstream struct {
 	Timeout       Duration `yaml:"timeout"`
 	// RefreshRate 是每次登录成功后异步回访上游的概率，0 表示从不刷新。
 	RefreshRate float64 `yaml:"refresh_rate"`
+	// QRLogin 控制登录页的微信扫码入口，上游没有开通扫码登录时关掉。
+	QRLogin bool `yaml:"qr_login"`
+	// QRService 是二维码里携带的 service 参数，留空时与上游登录页一致，登录后停在统一认证首页。
+	QRService string `yaml:"qr_service"`
 }
 
 func Load(path string) (*Config, error) {
@@ -163,6 +167,7 @@ func defaults() *Config {
 			PortalBaseURL: "https://newmy.gzhu.edu.cn",
 			Timeout:       Duration(30 * time.Second),
 			RefreshRate:   0.1,
+			QRLogin:       true,
 		},
 		SMTP: SMTP{Port: 587},
 	}

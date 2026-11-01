@@ -19,6 +19,7 @@ export default function App() {
   const [panel, setPanel] = useState<LoginPanel>(emptyPanel)
   const [footer, setFooter] = useState<LoginFooter>(emptyFooter)
   const [captcha, setCaptcha] = useState<CaptchaConfig>(emptyCaptcha)
+  const [qrLogin, setQrLogin] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -28,6 +29,7 @@ export default function App() {
       setPanel(config.panel)
       setFooter(config.footer)
       setCaptcha(config.captcha)
+      setQrLogin(config.qrLogin)
     })
     return () => {
       alive = false
@@ -35,7 +37,16 @@ export default function App() {
   }, [])
 
   const path = window.location.pathname
-  if (path === "/login") return <Login siteTitle={siteTitle} panel={panel} footer={footer} captcha={captcha} />
+  if (path === "/login")
+    return (
+      <Login
+        siteTitle={siteTitle}
+        panel={panel}
+        footer={footer}
+        captcha={captcha}
+        qrLogin={qrLogin}
+      />
+    )
   if (path === "/consent") return <Consent siteTitle={siteTitle} />
   if (path === "/admin") return <Admin siteTitle={siteTitle} />
   return <Account siteTitle={siteTitle} />

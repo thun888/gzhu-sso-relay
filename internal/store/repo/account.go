@@ -57,6 +57,21 @@ func (r *AccountRepo) ByUserAndProvider(ctx context.Context, userID, provider st
 	return &a, nil
 }
 
+// ByProviderUserID 按上游身份标识反查绑定，扫码登录拿不到本地账号时靠它定位用户。
+func (r *AccountRepo) ByProviderUserID(ctx context.Context, provider, providerUserID string) (*model.OAuthAccount, error) {
+	var a model.OAuthAccount
+	err := r.db.WithContext(ctx).
+		Where("provider = ? AND provider_user_id = ?", provider, providerUserID).
+		First(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询上游账号 %s/%s: %w", provider, providerUserID, err)
+	}
+	return &a, nil
+}
+
 // SaveProfile 写入或刷新 profile_data 快照，降级时由它代替上游返回。
 func (r *AccountRepo) SaveProfile(ctx context.Context, userID, provider, providerUserID string, profile any) error {
 	raw, err := json.Marshal(profile)

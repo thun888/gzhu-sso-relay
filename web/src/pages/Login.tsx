@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { Eye, EyeOff, Lock, User } from "lucide-react"
+import { Eye, EyeOff, Loader2, Lock, RefreshCw, User } from "lucide-react"
+import { QRCodeSVG } from "qrcode.react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -13,12 +14,26 @@ type Props = {
   panel: LoginPanel
   footer: LoginFooter
   captcha: CaptchaConfig
+  qrLogin: boolean
 }
 
 type loginResponse = {
   error?: string
   captcha_required?: boolean
 }
+
+type qrChallenge = {
+  id: string
+  url: string
+  expires_in: number
+}
+
+type qrPollResult = {
+  status?: "pending" | "confirmed" | "failed"
+  error?: string
+}
+
+type qrStatus = "loading" | "waiting" | "expired" | "failed"
 
 function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
@@ -32,7 +47,8 @@ function usernameError(value: string) {
   return ""
 }
 
-export default function Login({ siteTitle, panel, footer, captcha }: Props) {
+export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Props) {
+  const [mode, setMode] = useState<"password" | "qr">("password")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [revealed, setRevealed] = useState(false)
@@ -40,6 +56,10 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
   const [error, setError] = useState("")
   const [gated, setGated] = useState(false)
   const [ready, setReady] = useState(false)
+  const [qrImage, setQrImage] = useState<qrChallenge | null>(null)
+  const [qrStatus, setQrStatus] = useState<qrStatus>("loading")
+  const [qrError, setQrError] = useState("")
+  const [qrAttempt, setQrAttempt] = useState(0)
 
   const widget = useRef<CaptchaInstance | null>(null)
   const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
@@ -83,6 +103,70 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
       widget.current = null
     }
   }, [needCaptcha, captcha.captchaId])
+
+  useEffect(() => {
+    if (mode !== "qr" || !qrLogin) return
+
+    let alive = true
+    let timer: number | undefined
+
+    setQrImage(null)
+    setQrError("")
+    setQrStatus("loading")
+
+    const poll = async (id: string) => {
+      try {
+        const res = await fetch(`/api/login/qrcode/${encodeURIComponent(id)}`, { cache: "no-store" })
+        const data = (await res.json().catch(() => null)) as qrPollResult | null
+        if (!alive) return
+
+        if (res.ok && data?.status === "confirmed") {
+          window.location.replace(nextTarget())
+          return
+        }
+        if (res.status === 410) {
+          setQrStatus("expired")
+          return
+        }
+        if (!res.ok) {
+          setQrStatus("failed")
+          setQrError(data?.error ?? "扫码登录失败，请刷新后重试")
+          return
+        }
+      } catch {
+        // 网络抖动继续轮询，状态交给下一次请求判断
+      }
+      if (!alive) return
+      timer = window.setTimeout(() => void poll(id), 2000)
+    }
+
+    const start = async () => {
+      try {
+        const res = await fetch("/api/login/qrcode", { method: "POST" })
+        const data = (await res.json().catch(() => null)) as (qrChallenge & { error?: string }) | null
+        if (!alive) return
+        if (!res.ok || !data?.id) {
+          setQrStatus("failed")
+          setQrError(data?.error ?? "二维码获取失败，请刷新后重试")
+          return
+        }
+        setQrImage({ id: data.id, url: data.url, expires_in: data.expires_in })
+        setQrStatus("waiting")
+        void poll(data.id)
+      } catch {
+        if (!alive) return
+        setQrStatus("failed")
+        setQrError("网络异常，请刷新后重试")
+      }
+    }
+
+    void start()
+
+    return () => {
+      alive = false
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [mode, qrLogin, qrAttempt])
 
   async function submit(answer?: CaptchaAnswer) {
     if (pending) return
@@ -134,6 +218,15 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
     void submit()
   }
 
+  const qrHint =
+    qrStatus === "waiting"
+      ? "使用微信『扫一扫』扫描二维码"
+      : qrStatus === "expired"
+        ? "二维码已失效，请刷新"
+        : qrStatus === "failed"
+          ? qrError
+          : "正在生成二维码"
+
   return (
     <div
       className="relative min-h-screen w-full bg-cover bg-center bg-no-repeat"
@@ -170,81 +263,140 @@ export default function Login({ siteTitle, panel, footer, captcha }: Props) {
                 欢迎回来，请使用以下方式登录
               </p>
 
-              <form className="mt-7" onSubmit={handleSubmit}>
-                <div className="relative">
-                  <User
-                    className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
-                    strokeWidth={1.75}
-                  />
-                  <Input
-                    ref={usernameRef}
-                    className="h-11 pl-10"
-                    placeholder="请输入教工号或学号"
-                    aria-label="教工号或学号"
-                    aria-invalid={Boolean(usernameInvalid)}
-                    aria-describedby={usernameInvalid ? "username-error" : undefined}
-                    autoComplete="username"
-                    autoFocus
-                    required
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                  />
+              {qrLogin && (
+                <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-muted p-1">
+                  {(
+                    [
+                      ["password", "账号登录"],
+                      ["qr", "微信扫码"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setMode(value)}
+                      className={cn(
+                        "h-8 rounded-md text-[13px] transition-colors",
+                        mode === value
+                          ? "bg-card text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                {usernameInvalid && (
-                  <p
-                    id="username-error"
-                    className="mt-1.5 text-[12.5px] leading-[18px] text-destructive"
-                  >
-                    {usernameInvalid}
-                  </p>
-                )}
+              )}
 
-                <div className="relative mt-3">
-                  <Lock
-                    className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
-                    strokeWidth={1.75}
-                  />
-                  <Input
-                    className="h-11 pr-11 pl-10"
-                    type={revealed ? "text" : "password"}
-                    placeholder="请输入密码"
-                    aria-label="密码"
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
+              {mode === "qr" ? (
+                <div className="mt-5">
+                  <div className="relative mx-auto flex size-[200px] items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
+                    {qrImage ? (
+                      <QRCodeSVG value={qrImage.url} size={176} level="M" />
+                    ) : (
+                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                    )}
+                    {qrStatus === "expired" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/90">
+                        <span className="text-[13px] text-muted-foreground">二维码已失效</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <p
+                    className={cn(
+                      "mt-3 min-h-[18px] text-center text-[12.5px] leading-[18px]",
+                      qrStatus === "failed" ? "text-destructive" : "text-muted-foreground",
+                    )}
+                    role="status"
+                  >
+                    {qrHint}
+                  </p>
+
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={revealed ? "隐藏密码" : "显示密码"}
-                    onClick={() => setRevealed((value) => !value)}
-                    className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:bg-transparent"
+                    variant="outline"
+                    className="mt-2 h-11 w-full"
+                    disabled={qrStatus === "loading"}
+                    onClick={() => setQrAttempt((value) => value + 1)}
                   >
-                    {revealed ? (
-                      <EyeOff className="size-4" strokeWidth={1.75} />
-                    ) : (
-                      <Eye className="size-4" strokeWidth={1.75} />
-                    )}
+                    <RefreshCw className="size-4" strokeWidth={1.75} />
+                    刷新二维码
                   </Button>
                 </div>
+              ) : (
+                <form className="mt-7" onSubmit={handleSubmit}>
+                  <div className="relative">
+                    <User
+                      className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+                      strokeWidth={1.75}
+                    />
+                    <Input
+                      ref={usernameRef}
+                      className="h-11 pl-10"
+                      placeholder="请输入教工号或学号"
+                      aria-label="教工号或学号"
+                      aria-invalid={Boolean(usernameInvalid)}
+                      aria-describedby={usernameInvalid ? "username-error" : undefined}
+                      autoComplete="username"
+                      autoFocus
+                      required
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                    />
+                  </div>
+                  {usernameInvalid && (
+                    <p
+                      id="username-error"
+                      className="mt-1.5 text-[12.5px] leading-[18px] text-destructive"
+                    >
+                      {usernameInvalid}
+                    </p>
+                  )}
 
-                <p
-                  className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
-                  role="alert"
-                >
-                  {error}
-                </p>
+                  <div className="relative mt-3">
+                    <Lock
+                      className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+                      strokeWidth={1.75}
+                    />
+                    <Input
+                      className="h-11 pr-11 pl-10"
+                      type={revealed ? "text" : "password"}
+                      placeholder="请输入密码"
+                      aria-label="密码"
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={revealed ? "隐藏密码" : "显示密码"}
+                      onClick={() => setRevealed((value) => !value)}
+                      className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:bg-transparent"
+                    >
+                      {revealed ? (
+                        <EyeOff className="size-4" strokeWidth={1.75} />
+                      ) : (
+                        <Eye className="size-4" strokeWidth={1.75} />
+                      )}
+                    </Button>
+                  </div>
 
-                <Button
-                  type="submit"
-                  className="h-11 w-full"
-                  disabled={pending}
-                >
-                  {pending ? "登录中" : "登录"}
-                </Button>
-              </form>
+                  <p
+                    className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
+                    role="alert"
+                  >
+                    {error}
+                  </p>
+
+                  <Button type="submit" className="h-11 w-full" disabled={pending}>
+                    {pending ? "登录中" : "登录"}
+                  </Button>
+                </form>
+              )}
             </div>
 
             {showPanel && (

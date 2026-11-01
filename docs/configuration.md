@@ -164,6 +164,7 @@ Redis 不持久化业务数据，但承载全部短期状态。启动时不会�
 | `relay:bindstate:` | 10 分钟 | 账号绑定流程的 state |
 | `relay:authfail:` | 15 分钟 | 上游认证尝试计数，上限 5 次 |
 | `relay:captcha:` | `captcha.fail_window` | 需要验证码的 IP 标记 |
+| `relay:qrlogin:` | 3 分钟 | 进行中的扫码登录，确认后缩短为 1 分钟 |
 
 切换 Redis 库或清空数据会使用户重新登录，并丢失进行中的授权与绑定流程，不影响数据库中的用户与授权记录。
 
@@ -174,17 +175,26 @@ Redis 不持久化业务数据，但承载全部短期状态。启动时不会�
 | `cas_base_url` | `"https://newcas.gzhu.edu.cn"` | CAS 登录地址 |
 | `portal_base_url` | `"https://newmy.gzhu.edu.cn"` | 融合门户地址 |
 | `timeout` | `30s` | 单次上游登录链路的总超时，必须为正数 |
+| `refresh_rate` | `0.1` | 登录成功后异步回访上游刷新资料的概率，`0` 表示从不刷新 |
+| `qr_login` | `true` | 是否在登录页展示微信扫码入口 |
+| `qr_service` | `""` | 二维码里携带的 `service` 参数，留空时与上游登录页一致 |
 
 ```yaml
 upstream:
   cas_base_url: "https://newcas.gzhu.edu.cn"
   portal_base_url: "https://newmy.gzhu.edu.cn"
   timeout: 30s
+  refresh_rate: 0.1
+  qr_login: true
+  qr_service: ""
 ```
 
 一次登录会依次访问 CAS 登录页、提交账密、打开门户首页、请求用户信息，全部在同一个超时窗口内完成。上游响应慢时适当调大，不建议超过 `60s`。
 
 上游返回要求验证码、账号被锁定、账号密码错误时，relay 会区分错误并返回不同提示，不会把这些情况混为「服务不可用」。
+
+`qr_login` 只影响登录页是否展示扫码入口，关掉后扫码相关的两个接口仍可访问但不再使用。
+`qr_service` 一般留空；填上门户等应用的 service 后，扫码确认时上游会直接为该应用签发票据，用于排查扫码登录后拿不到门户会话的情况。
 
 ## captcha
 
@@ -288,6 +298,8 @@ upstream:
   cas_base_url: "https://newcas.gzhu.edu.cn"
   portal_base_url: "https://newmy.gzhu.edu.cn"
   timeout: 30s
+  refresh_rate: 0.1
+  qr_login: true
 
 captcha:
   enabled: false

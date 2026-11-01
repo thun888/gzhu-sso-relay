@@ -89,11 +89,13 @@ func run() error {
 		Groups:   groups,
 		Sessions: sessions,
 		Throttle: auth.NewThrottle(rdb),
+		QR:       auth.NewQRStore(rdb),
 		Upstream: auth.Upstream{
 			CASBaseURL:    cfg.Upstream.CASBaseURL,
 			PortalBaseURL: cfg.Upstream.PortalBaseURL,
 			Timeout:       cfg.Upstream.Timeout.Std(),
 			RefreshRate:   cfg.Upstream.RefreshRate,
+			QRService:     cfg.Upstream.QRService,
 		},
 		EmailDomains: cfg.Server.EmailDomains,
 	})
@@ -167,8 +169,10 @@ func run() error {
 	router.POST("/oidc/token", provider.Token)
 	router.POST("/oidc/revoke", provider.Revoke)
 	router.GET("/oidc/userinfo", provider.UserInfo)
-	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy))
+	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy, cfg.Upstream.QRLogin))
 	router.POST("/api/login", authHandler.Login)
+	router.POST("/api/login/qrcode", authHandler.StartQRLogin)
+	router.GET("/api/login/qrcode/:id", authHandler.PollQRLogin)
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
 	router.GET("/api/consent", authHandler.RequireUser(), consentHandler.Show)

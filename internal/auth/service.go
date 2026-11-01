@@ -22,6 +22,7 @@ import (
 
 var (
 	ErrInvalidCredentials  = errors.New("auth: 账号或密码错误")
+	ErrAccountDisabled     = errors.New("auth: 该账号已被停用")
 	ErrNoEmailDomain       = errors.New("auth: 该学号没有匹配的邮箱域名前缀")
 	ErrTooManyAttempts     = errors.New("auth: 尝试次数过多，请稍后再试")
 	ErrUpstreamUnavailable = errors.New("auth: 上游认证服务不可用")
@@ -34,6 +35,7 @@ type Upstream struct {
 	PortalBaseURL string
 	Timeout       time.Duration
 	RefreshRate   float64
+	QRService     string
 }
 
 type Service struct {
@@ -42,6 +44,7 @@ type Service struct {
 	groups       *repo.GroupRepo
 	sessions     *session.Manager
 	throttle     *Throttle
+	qr           *QRStore
 	upstream     Upstream
 	emailDomains config.EmailDomains
 }
@@ -52,6 +55,7 @@ type Options struct {
 	Groups       *repo.GroupRepo
 	Sessions     *session.Manager
 	Throttle     *Throttle
+	QR           *QRStore
 	Upstream     Upstream
 	EmailDomains config.EmailDomains
 }
@@ -63,6 +67,7 @@ func NewService(opts Options) *Service {
 		groups:       opts.Groups,
 		sessions:     opts.Sessions,
 		throttle:     opts.Throttle,
+		qr:           opts.QR,
 		upstream:     opts.Upstream,
 		emailDomains: opts.EmailDomains,
 	}
@@ -241,7 +246,7 @@ func upstreamGroups(profile portal.Profile) []repo.GroupSpec {
 
 func (s *Service) issue(ctx context.Context, user *model.User) (*Result, error) {
 	if user.Status == model.UserStatusDisabled {
-		return nil, ErrInvalidCredentials
+		return nil, ErrAccountDisabled
 	}
 
 	token, err := s.sessions.Create(ctx, user.ID)
