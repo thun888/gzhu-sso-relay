@@ -119,9 +119,6 @@ func run() error {
 	scopeRepo := repo.NewScopeRepo(db)
 	pending := oidc.NewPendingStore(rdb)
 
-	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), cfg.Server.BaseURL)
-	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
-
 	sender := mail.NewSender(mail.Config{
 		Host:     cfg.SMTP.Host,
 		Port:     cfg.SMTP.Port,
@@ -130,6 +127,10 @@ func run() error {
 		FromName: cfg.SMTP.FromName,
 		From:     cfg.SMTP.From,
 	})
+
+	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), cfg.Server.BaseURL, sender.Enabled())
+	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
+
 	notifier := notify.New(sender, repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
 	emailChanges := emailchange.NewStore(rdb)
 	emailHandler := httpapi.NewEmailChange(users, cfg.Server.EmailDomains, sender, emailChanges, cfg.Server.BaseURL, cfg.Server.AccountURL, cfg.Server.SiteTitle)

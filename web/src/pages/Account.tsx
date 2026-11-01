@@ -13,6 +13,7 @@ type Me = {
   name: string
   email: string
   type: number
+  email_editable?: boolean
   belong_class: string
   groups: { id: number; name: string; code: string }[]
   bindings: { provider: string; display_name: string; bound: boolean; account?: string }[]
@@ -174,18 +175,20 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
             label="邮箱"
             value={me.email}
             action={
-              <button
-                type="button"
-                title="修改邮箱别名"
-                onClick={() => {
-                  setEmailMsg("")
-                  setNewEmail("")
-                  setEmailOpen(true)
-                }}
-                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                <PenLine className="size-3.5" strokeWidth={1.75} />
-              </button>
+              me.email_editable ? (
+                <button
+                  type="button"
+                  title="修改邮箱别名"
+                  onClick={() => {
+                    setEmailMsg("")
+                    setNewEmail("")
+                    setEmailOpen(true)
+                  }}
+                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <PenLine className="size-3.5" strokeWidth={1.75} />
+                </button>
+              ) : undefined
             }
           />
           {me.belong_class && <Row label="班级" value={me.belong_class} />}

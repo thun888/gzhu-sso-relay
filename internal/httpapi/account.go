@@ -12,24 +12,26 @@ import (
 )
 
 type Account struct {
-	users    *repo.UserRepo
-	accounts *repo.AccountRepo
-	groups   *repo.GroupRepo
-	registry *binding.Registry
-	acls     *repo.BindingACLRepo
-	states   *binding.StateStore
-	baseURL  string
+	users         *repo.UserRepo
+	accounts      *repo.AccountRepo
+	groups        *repo.GroupRepo
+	registry      *binding.Registry
+	acls          *repo.BindingACLRepo
+	states        *binding.StateStore
+	baseURL       string
+	emailEditable bool
 }
 
-func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.GroupRepo, registry *binding.Registry, acls *repo.BindingACLRepo, states *binding.StateStore, baseURL string) *Account {
+func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.GroupRepo, registry *binding.Registry, acls *repo.BindingACLRepo, states *binding.StateStore, baseURL string, emailEditable bool) *Account {
 	return &Account{
-		users:    users,
-		accounts: accounts,
-		groups:   groups,
-		registry: registry,
-		acls:     acls,
-		states:   states,
-		baseURL:  strings.TrimSuffix(baseURL, "/"),
+		users:         users,
+		accounts:      accounts,
+		groups:        groups,
+		registry:      registry,
+		acls:          acls,
+		states:        states,
+		baseURL:       strings.TrimSuffix(baseURL, "/"),
+		emailEditable: emailEditable,
 	}
 }
 
@@ -95,13 +97,14 @@ func (h *Account) Me(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{
-		"id":           user.ID,
-		"name":         user.Name,
-		"email":        user.Email,
-		"type":         user.Type,
-		"belong_class": h.accounts.ClassOf(ctx, user.ID, repo.UpstreamProvider),
-		"groups":       briefs,
-		"bindings":     bindings,
+		"id":             user.ID,
+		"name":           user.Name,
+		"email":          user.Email,
+		"type":           user.Type,
+		"email_editable": h.emailEditable,
+		"belong_class":   h.accounts.ClassOf(ctx, user.ID, repo.UpstreamProvider),
+		"groups":         briefs,
+		"bindings":       bindings,
 	})
 }
 
