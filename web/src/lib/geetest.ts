@@ -55,6 +55,7 @@ export async function createCaptcha(
   captchaId: string,
   onSuccess: (answer: CaptchaAnswer) => void,
   onError: () => void,
+  onClose: () => void,
 ): Promise<CaptchaInstance> {
   await loadScript()
   if (!window.initGeetest4) throw new Error("geetest 未就绪")
@@ -71,6 +72,7 @@ export async function createCaptcha(
           if (answer) onSuccess(answer)
         })
         .onError(onError)
+        .onClose(onClose)
       resolve(instance)
     })
   })

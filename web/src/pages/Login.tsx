@@ -67,6 +67,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
   const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
   const qrStartRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
   const captchaTargetRef = useRef<"password" | "qr">("password")
+  const qrCaptchaOpenRef = useRef(false)
   const usernameRef = useRef<HTMLInputElement | null>(null)
 
   const needCaptcha = captcha.enabled && (captcha.required || gated || qrGated)
@@ -87,10 +88,20 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
     createCaptcha(
       captcha.captchaId,
       (answer) => {
-        if (captchaTargetRef.current === "qr") qrStartRef.current(answer)
-        else submitRef.current(answer)
+        if (captchaTargetRef.current === "qr") {
+          qrCaptchaOpenRef.current = false
+          setQrCaptchaPending(false)
+          qrStartRef.current(answer)
+        } else submitRef.current(answer)
       },
       () => setError("验证加载异常，请刷新页面后重试"),
+      () => {
+        if (!qrCaptchaOpenRef.current) return
+        qrCaptchaOpenRef.current = false
+        setQrCaptchaPending(false)
+        setQrStatus("failed")
+        setQrError("已取消验证，请点击刷新二维码")
+      },
     )
       .then((instance) => {
         if (!alive) {
@@ -114,7 +125,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
   // 二维码生成被要求先过验证码时，等组件就绪后自动弹出，不用用户再点一次。
   useEffect(() => {
     if (mode !== "qr" || !qrCaptchaPending || !ready || !widget.current) return
-    setQrCaptchaPending(false)
+    qrCaptchaOpenRef.current = true
     widget.current.showCaptcha()
   }, [mode, qrCaptchaPending, ready])
 
@@ -256,7 +267,9 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
         ? "二维码已失效，请刷新"
         : qrStatus === "failed"
           ? qrError
-          : "正在生成二维码"
+          : qrCaptchaPending
+            ? "请先完成验证"
+            : "正在生成二维码"
 
   return (
     <div
@@ -324,9 +337,9 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
                   <div className="relative mx-auto flex size-[200px] items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
                     {qrImage ? (
                       <QRCodeSVG value={qrImage.url} size={176} level="M" />
-                    ) : (
+                    ) : qrStatus === "loading" ? (
                       <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                    )}
+                    ) : null}
                     {qrStatus === "expired" && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/90">
                         <span className="text-[13px] text-muted-foreground">二维码已失效</span>
