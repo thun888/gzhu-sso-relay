@@ -60,12 +60,16 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
   const [qrStatus, setQrStatus] = useState<qrStatus>("loading")
   const [qrError, setQrError] = useState("")
   const [qrAttempt, setQrAttempt] = useState(0)
+  const [qrGated, setQrGated] = useState(false)
+  const [qrCaptchaPending, setQrCaptchaPending] = useState(false)
 
   const widget = useRef<CaptchaInstance | null>(null)
   const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
+  const qrStartRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
+  const captchaTargetRef = useRef<"password" | "qr">("password")
   const usernameRef = useRef<HTMLInputElement | null>(null)
 
-  const needCaptcha = captcha.enabled && (captcha.required || gated)
+  const needCaptcha = captcha.enabled && (captcha.required || gated || qrGated)
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
   const showFooter = footer.enabled && Boolean(footer.text.trim())
   const usernameInvalid = usernameError(username)
@@ -82,7 +86,10 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
     let alive = true
     createCaptcha(
       captcha.captchaId,
-      (answer) => submitRef.current(answer),
+      (answer) => {
+        if (captchaTargetRef.current === "qr") qrStartRef.current(answer)
+        else submitRef.current(answer)
+      },
       () => setError("验证加载异常，请刷新页面后重试"),
     )
       .then((instance) => {
@@ -104,6 +111,13 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
     }
   }, [needCaptcha, captcha.captchaId])
 
+  // 二维码生成被要求先过验证码时，等组件就绪后自动弹出，不用用户再点一次。
+  useEffect(() => {
+    if (mode !== "qr" || !qrCaptchaPending || !ready || !widget.current) return
+    setQrCaptchaPending(false)
+    widget.current.showCaptcha()
+  }, [mode, qrCaptchaPending, ready])
+
   useEffect(() => {
     if (mode !== "qr" || !qrLogin) return
 
@@ -113,6 +127,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
     setQrImage(null)
     setQrError("")
     setQrStatus("loading")
+    setQrCaptchaPending(false)
 
     const poll = async (id: string) => {
       try {
@@ -140,16 +155,30 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
       timer = window.setTimeout(() => void poll(id), 2000)
     }
 
-    const start = async () => {
+    const start = async (answer?: CaptchaAnswer) => {
       try {
-        const res = await fetch("/api/login/qrcode", { method: "POST" })
-        const data = (await res.json().catch(() => null)) as (qrChallenge & { error?: string }) | null
+        const res = await fetch("/api/login/qrcode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ captcha: answer }),
+        })
+        const data = (await res.json().catch(() => null)) as
+          | (qrChallenge & { error?: string; captcha_required?: boolean })
+          | null
         if (!alive) return
+        if (data?.captcha_required) {
+          widget.current?.reset()
+          captchaTargetRef.current = "qr"
+          setQrGated(true)
+          setQrCaptchaPending(true)
+          return
+        }
         if (!res.ok || !data?.id) {
           setQrStatus("failed")
           setQrError(data?.error ?? "二维码获取失败，请刷新后重试")
           return
         }
+        widget.current?.reset()
         setQrImage({ id: data.id, url: data.url, expires_in: data.expires_in })
         setQrStatus("waiting")
         void poll(data.id)
@@ -160,6 +189,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
       }
     }
 
+    qrStartRef.current = (answer) => void start(answer)
     void start()
 
     return () => {
@@ -211,6 +241,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
         return
       }
       setError("")
+      captchaTargetRef.current = "password"
       widget.current.showCaptcha()
       return
     }

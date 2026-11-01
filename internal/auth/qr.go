@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,22 +28,36 @@ const (
 	qrPollGap = 1500 * time.Millisecond
 	// qrConfirmedTTL 让并发的第二次轮询拿到同一个会话，不必重走一遍上游。
 	qrConfirmedTTL = time.Minute
+	// 轮询锁的兜底 TTL：比上游超时长一截，持锁实例崩溃后靠它自动放出。
+	qrLockSlack = 5 * time.Second
+
+	qrLockPrefix  = "relay:qrlock:"
+	qrStartPrefix = "relay:qrstart:"
+	// 同一 IP 每分钟最多生成 12 个二维码，正常用户点不到这个量。
+	qrStartLimit  = 12
+	qrStartWindow = time.Minute
 )
+
+// qrUnlockScript 只删除自己持有的锁，避免误删后一个轮询刚设置的锁。
+var qrUnlockScript = redis.NewScript(`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`)
 
 var (
 	ErrQRSessionInvalid = errors.New("auth: 二维码已失效")
 	ErrQRUnlinked       = errors.New("auth: 该微信未关联统一身份认证账号")
+	ErrQRBindMismatch   = errors.New("auth: 轮询请求与发起二维码的浏览器不一致")
 )
 
 // QRSession 保存一轮扫码登录的中间状态。上游 cookie 一并落库，
 // 轮询打到别的实例时也能续上同一份会话。
 type QRSession struct {
-	UUID      string         `json:"uuid"`
-	UserAgent string         `json:"user_agent"`
-	Cookies   []*http.Cookie `json:"cookies"`
-	LastPoll  int64          `json:"last_poll"`
-	UserID    string         `json:"user_id"`
-	Token     string         `json:"token"`
+	UUID      string `json:"uuid"`
+	UserAgent string `json:"user_agent"`
+	// BindHash 是发起浏览器绑定 cookie 的 SHA-256，轮询必须持同一份 cookie 才认。
+	BindHash string         `json:"bind_hash"`
+	Cookies  []*http.Cookie `json:"cookies"`
+	LastPoll int64          `json:"last_poll"`
+	UserID   string         `json:"user_id"`
+	Token    string         `json:"token"`
 }
 
 type QRStore struct {
@@ -87,6 +102,41 @@ func (s *QRStore) delete(ctx context.Context, id string) error {
 	return s.rdb.Del(ctx, qrPrefix+id).Err()
 }
 
+// allowStart 按固定窗口限制同一 IP 生成二维码的频率。
+func (s *QRStore) allowStart(ctx context.Context, ip string) (bool, error) {
+	if ip == "" {
+		return true, nil
+	}
+	key := qrStartPrefix + ip
+	count, err := s.rdb.Incr(ctx, key).Result()
+	if err != nil {
+		return false, fmt.Errorf("auth: 扫码生成计数: %w", err)
+	}
+	if count == 1 {
+		if err := s.rdb.Expire(ctx, key, qrStartWindow).Err(); err != nil {
+			return false, fmt.Errorf("auth: 扫码生成计数过期: %w", err)
+		}
+	}
+	return count <= qrStartLimit, nil
+}
+
+// lock 给一次轮询的变更路径加互斥，拿不到锁说明已有实例在处理，直接当作 pending。
+func (s *QRStore) lock(ctx context.Context, id string, ttl time.Duration) (func(), bool, error) {
+	token := uuid.NewString()
+	ok, err := s.rdb.SetNX(ctx, qrLockPrefix+id, token, ttl).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("auth: 扫码轮询加锁: %w", err)
+	}
+	if !ok {
+		return nil, false, nil
+	}
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = qrUnlockScript.Run(ctx, s.rdb, []string{qrLockPrefix + id}, token).Err()
+	}, true, nil
+}
+
 // QRChallenge 是一次扫码登录的二维码，ID 既是轮询凭据也是上游绑定用的 uuid。
 type QRChallenge struct {
 	ID        string
@@ -94,9 +144,18 @@ type QRChallenge struct {
 	ExpiresIn time.Duration
 }
 
-func (s *Service) StartQRLogin(ctx context.Context, userAgent string) (*QRChallenge, error) {
+func (s *Service) StartQRLogin(ctx context.Context, ip, userAgent, bindHash string) (*QRChallenge, error) {
+	ok, err := s.qr.allowStart(ctx, ip)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrTooManyAttempts
+	}
+
 	id := uuid.NewString()
-	if err := s.qr.save(ctx, id, QRSession{UUID: id, UserAgent: userAgent}, QRTTL); err != nil {
+	session := QRSession{UUID: id, UserAgent: userAgent, BindHash: bindHash}
+	if err := s.qr.save(ctx, id, session, QRTTL); err != nil {
 		return nil, err
 	}
 	return &QRChallenge{
@@ -107,10 +166,15 @@ func (s *Service) StartQRLogin(ctx context.Context, userAgent string) (*QRChalle
 }
 
 // PollQRLogin 查询一次扫码状态，返回 nil 表示仍在等待扫码。
-func (s *Service) PollQRLogin(ctx context.Context, id string) (*Result, error) {
+// bindHash 是轮询请求携带的绑定 cookie 哈希，与发起时不一致直接拒绝。
+func (s *Service) PollQRLogin(ctx context.Context, id, bindHash string) (*Result, error) {
 	session, err := s.qr.load(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if session.BindHash == "" || bindHash == "" ||
+		subtle.ConstantTimeCompare([]byte(session.BindHash), []byte(bindHash)) != 1 {
+		return nil, ErrQRBindMismatch
 	}
 
 	if session.Token != "" {
@@ -120,6 +184,15 @@ func (s *Service) PollQRLogin(ctx context.Context, id string) (*Result, error) {
 		}
 		return &Result{User: user, Token: session.Token}, nil
 	}
+
+	release, locked, err := s.qr.lock(ctx, id, s.upstream.Timeout+qrLockSlack)
+	if err != nil {
+		return nil, err
+	}
+	if !locked {
+		return nil, nil
+	}
+	defer release()
 
 	if time.Since(time.Unix(session.LastPoll, 0)) < qrPollGap {
 		return nil, nil
@@ -152,7 +225,8 @@ func (s *Service) PollQRLogin(ctx context.Context, id string) (*Result, error) {
 		return nil, err
 	}
 
-	session.Cookies = jar.snapshot()
+	// 确认后的会话只留本地令牌，上游 cookie 用完即弃，不落 Redis。
+	session.Cookies = nil
 	session.UserID = result.User.ID
 	session.Token = result.Token
 	if err := s.qr.save(ctx, id, session, qrConfirmedTTL); err != nil {

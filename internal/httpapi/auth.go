@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -18,6 +22,9 @@ import (
 const (
 	sessionCookie = session.CookieName
 	ctxUserKey    = "relay.user"
+	// qrBindCookie 把二维码绑定到发起它的浏览器，确认结果只发给持有该 cookie 的一方。
+	qrBindCookie    = "relay_qr_bind"
+	qrBindCookieTTL = 5 * time.Minute
 )
 
 type Auth struct {
@@ -92,16 +99,60 @@ type qrChallengeView struct {
 	ExpiresIn int    `json:"expires_in"`
 }
 
+type qrStartRequest struct {
+	Captcha captcha.Answer `json:"captcha"`
+}
+
 // StartQRLogin 生成一次上游扫码登录，返回前端渲染二维码所需的地址。
+// 命中验证码策略时必须先通过验证，同时下发绑定浏览器的 HttpOnly cookie。
 func (h *Auth) StartQRLogin(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
-	challenge, err := h.service.StartQRLogin(c.Request.Context(), c.Request.UserAgent())
+	var req qrStartRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	ip := c.ClientIP()
+
+	if h.captcha.Required(ctx, ip) {
+		if err := h.captcha.Verify(ctx, req.Captcha); err != nil {
+			log.Printf("扫码验证码校验未通过 ip=%s: %v", ip, err)
+			status, message := captchaError(err)
+			c.JSON(status, gin.H{"error": message, "captcha_required": true})
+			return
+		}
+	}
+
+	secret, err := randomHex(32)
 	if err != nil {
-		log.Printf("生成扫码登录二维码失败 ip=%s: %v", c.ClientIP(), err)
+		log.Printf("生成扫码绑定凭据失败 ip=%s: %v", ip, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成二维码失败，请改用账号密码登录"})
 		return
 	}
+
+	challenge, err := h.service.StartQRLogin(ctx, ip, c.Request.UserAgent(), sha256Hex(secret))
+	if err != nil {
+		if errors.Is(err, auth.ErrTooManyAttempts) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "获取二维码过于频繁，请稍后再试"})
+			return
+		}
+		log.Printf("生成扫码登录二维码失败 ip=%s: %v", ip, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成二维码失败，请改用账号密码登录"})
+		return
+	}
+
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     qrBindCookie,
+		Value:    secret,
+		Path:     "/api/login/qrcode",
+		MaxAge:   int(qrBindCookieTTL / time.Second),
+		Secure:   h.secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	c.JSON(http.StatusOK, qrChallengeView{
 		ID:        challenge.ID,
@@ -111,10 +162,16 @@ func (h *Auth) StartQRLogin(c *gin.Context) {
 }
 
 // PollQRLogin 查询扫码状态，确认后直接下发会话 cookie。
+// 绑定 cookie 与发起时不一致的请求拿不到确认结果，防止借他人二维码种会话。
 func (h *Auth) PollQRLogin(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
-	result, err := h.service.PollQRLogin(c.Request.Context(), c.Param("id"))
+	bindHash := ""
+	if secret, err := c.Cookie(qrBindCookie); err == nil && secret != "" {
+		bindHash = sha256Hex(secret)
+	}
+
+	result, err := h.service.PollQRLogin(c.Request.Context(), c.Param("id"), bindHash)
 	if err != nil {
 		status, message := qrError(err)
 		if status != http.StatusGone {
@@ -241,6 +298,8 @@ func qrError(err error) (int, string) {
 	switch {
 	case errors.Is(err, auth.ErrQRSessionInvalid):
 		return http.StatusGone, "二维码已失效，请刷新后重试"
+	case errors.Is(err, auth.ErrQRBindMismatch):
+		return http.StatusForbidden, "二维码已失效，请刷新后重试"
 	case errors.Is(err, auth.ErrQRUnlinked):
 		return http.StatusConflict, "该微信还未关联统一身份认证账号，请先用账号密码登录一次"
 	case errors.Is(err, auth.ErrAccountDisabled):
@@ -271,4 +330,17 @@ func setSessionCookie(c *gin.Context, value string, maxAge int, secure bool) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func sha256Hex(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }
