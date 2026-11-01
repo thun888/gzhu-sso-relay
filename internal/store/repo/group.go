@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -63,6 +64,9 @@ func (r *GroupRepo) Delete(ctx context.Context, id uint64) error {
 			return err
 		}
 		if err := tx.Where("group_id = ?", id).Delete(&model.GroupOAuthClient{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Group{}).Where("parent_id = ?", id).Update("parent_id", nil).Error; err != nil {
 			return err
 		}
 		return tx.Where("id = ?", id).Delete(&model.Group{}).Error
@@ -165,40 +169,90 @@ SELECT code FROM chain ORDER BY code`
 type GroupSpec struct {
 	Code string
 	Name string
+	// ParentCode 为该组在本次同步中的上级组标识，父组变化时一并写回。
+	ParentCode string
 }
 
 // SyncUpstream 用上游身份信息重建用户的同步组，手工维护的组不受影响。
+// 组与成员关系都按差异写入：没有变化时不产生任何行更新。
 func (r *GroupRepo) SyncUpstream(ctx context.Context, userID string, specs []GroupSpec) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ids := make([]uint64, 0, len(specs))
+		if len(specs) == 0 {
+			return tx.Exec(`DELETE FROM user_groups ug USING "groups" g
+				WHERE ug.user_id = ? AND ug.group_id = g.id AND g.is_upstream`, userID).Error
+		}
+
+		values := make([]string, 0, len(specs))
+		groupArgs := make([]any, 0, len(specs)*2)
+		linkArgs := make([]any, 1, len(specs)+1)
+		linkArgs[0] = userID
+		placeholders := make([]string, 0, len(specs))
 		for _, spec := range specs {
-			group := model.Group{Name: spec.Name, Code: spec.Code, IsUpstream: true}
-			err := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "code"}},
-				DoUpdates: clause.AssignmentColumns([]string{"name", "is_upstream", "updated_at"}),
-			}).Create(&group).Error
+			values = append(values, "(?, ?, true, now(), now())")
+			groupArgs = append(groupArgs, spec.Name, spec.Code)
+			linkArgs = append(linkArgs, spec.Code)
+			placeholders = append(placeholders, "?")
+		}
+
+		err := tx.Exec(`INSERT INTO "groups" (name, code, is_upstream, created_at, updated_at)
+			VALUES `+strings.Join(values, ", ")+`
+			ON CONFLICT (code) DO UPDATE SET
+				name = EXCLUDED.name,
+				is_upstream = EXCLUDED.is_upstream,
+				updated_at = EXCLUDED.updated_at
+			WHERE "groups".name IS DISTINCT FROM EXCLUDED.name
+				OR "groups".is_upstream IS DISTINCT FROM EXCLUDED.is_upstream`, groupArgs...).Error
+		if err != nil {
+			return err
+		}
+
+		for _, spec := range specs {
+			if spec.ParentCode == "" || spec.ParentCode == spec.Code {
+				continue
+			}
+			err := tx.Exec(`UPDATE "groups" g SET parent_id = p.id, updated_at = now()
+				FROM "groups" p
+				WHERE g.code = ? AND p.code = ? AND g.parent_id IS DISTINCT FROM p.id`,
+				spec.Code, spec.ParentCode).Error
 			if err != nil {
 				return err
 			}
-			ids = append(ids, group.ID)
 		}
 
-		upstream := tx.Model(&model.Group{}).Select("id").Where("is_upstream")
-		if err := tx.Where("user_id = ? AND group_id IN (?)", userID, upstream).Delete(&model.UserGroup{}).Error; err != nil {
+		in := strings.Join(placeholders, ", ")
+		err = tx.Exec(`DELETE FROM user_groups ug USING "groups" g
+			WHERE ug.user_id = ? AND ug.group_id = g.id AND g.is_upstream AND g.code NOT IN (`+in+`)`,
+			linkArgs...).Error
+		if err != nil {
 			return err
 		}
-		if len(ids) == 0 {
-			return nil
-		}
-
-		links := make([]model.UserGroup, 0, len(ids))
-		for _, id := range ids {
-			links = append(links, model.UserGroup{UserID: userID, GroupID: id})
-		}
-		return tx.Create(&links).Error
+		return tx.Exec(`INSERT INTO user_groups (user_id, group_id, created_at, updated_at)
+			SELECT ?, g.id, now(), now() FROM "groups" g WHERE g.code IN (`+in+`)
+			ON CONFLICT DO NOTHING`, linkArgs...).Error
 	})
 	if err != nil {
 		return fmt.Errorf("repo: 同步用户 %s 的上游用户组: %w", userID, err)
 	}
 	return nil
+}
+
+// IsAncestorOf 判断 ancestorID 是否位于 id 的祖先链上，用来挡住成环的父组调整。
+func (r *GroupRepo) IsAncestorOf(ctx context.Context, ancestorID, id uint64) (bool, error) {
+	const query = `
+WITH RECURSIVE chain AS (
+	SELECT g.id, g.parent_id
+	FROM "groups" g
+	WHERE g.id = ?
+	UNION
+	SELECT parent.id, parent.parent_id
+	FROM "groups" parent
+	JOIN chain c ON parent.id = c.parent_id
+)
+SELECT COUNT(*) FROM chain WHERE id = ?`
+
+	var count int64
+	if err := r.db.WithContext(ctx).Raw(query, id, ancestorID).Scan(&count).Error; err != nil {
+		return false, fmt.Errorf("repo: 查询用户组 %d 的祖先链: %w", id, err)
+	}
+	return count > 0, nil
 }

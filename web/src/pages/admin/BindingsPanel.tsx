@@ -4,7 +4,7 @@ import { Link2, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Group, Member } from "./client-types"
-import { Chip, Empty, Panel, api } from "./shared"
+import { Chip, Empty, Panel, api, groupPath } from "./shared"
 
 type BindingProvider = {
   name: string
@@ -144,6 +144,7 @@ function ProviderCard({
                     key={group.id}
                     active={groupIds.includes(group.id)}
                     label={group.name}
+                    title={groupPath(groups, group)}
                     onClick={() =>
                       setGroupIds(
                         groupIds.includes(group.id)

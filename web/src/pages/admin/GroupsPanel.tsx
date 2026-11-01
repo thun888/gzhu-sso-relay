@@ -1,36 +1,64 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Plus, Search, X } from "lucide-react"
+import { ChevronRight, Plus, Search, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Modal } from "@/components/ui/modal"
 import { cn } from "@/lib/utils"
-import { ConfirmDialog, Empty, Panel, api } from "./shared"
-
-type Group = {
-  id: number
-  name: string
-  code: string
-  is_upstream: boolean
-  parent_id?: number | null
-}
+import type { Group } from "./client-types"
+import { ConfirmDialog, Empty, Panel, Select, api, groupPath } from "./shared"
 
 type Member = { id: string; name: string; email: string; status: number }
 
-const tabs = [
-  { key: "manual", label: "手动维护" },
-  { key: "upstream", label: "上游同步" },
-] as const
+type GroupNode = { group: Group; children: GroupNode[] }
 
-type TabKey = (typeof tabs)[number]["key"]
+function buildTree(groups: Group[]): GroupNode[] {
+  const nodes = new Map<number, GroupNode>(
+    groups.map((group) => [group.id, { group, children: [] }]),
+  )
+  const parentOf = (node: GroupNode) =>
+    node.group.parent_id == null ? undefined : nodes.get(node.group.parent_id)
+
+  // 祖先链回到自己说明数据成环，这类组按顶级展示，避免渲染时无限递归
+  const cyclic = new Set<number>()
+  nodes.forEach((node) => {
+    const seen = new Set<number>([node.group.id])
+    for (let cursor = parentOf(node); cursor; cursor = parentOf(cursor)) {
+      if (seen.has(cursor.group.id)) {
+        cyclic.add(node.group.id)
+        return
+      }
+      seen.add(cursor.group.id)
+    }
+  })
+
+  const roots: GroupNode[] = []
+  nodes.forEach((node) => {
+    const parent = cyclic.has(node.group.id) ? undefined : parentOf(node)
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  })
+
+  const sort = (list: GroupNode[]) => {
+    list.sort(
+      (a, b) =>
+        Number(a.group.is_upstream) - Number(b.group.is_upstream) ||
+        a.group.code.localeCompare(b.group.code),
+    )
+    list.forEach((node) => sort(node.children))
+  }
+  sort(roots)
+  return roots
+}
 
 export function GroupsPanel({ onError }: { onError: (message: string) => void }) {
   const [groups, setGroups] = useState<Group[]>([])
-  const [tab, setTab] = useState<TabKey>("manual")
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({})
 
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState("")
   const [code, setCode] = useState("")
+  const [parentID, setParentID] = useState("")
   const [creating, setCreating] = useState(false)
 
   const [memberGroup, setMemberGroup] = useState<Group | null>(null)
@@ -81,19 +109,41 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
     [groups],
   )
 
-  const visible = groups.filter((group) => group.is_upstream === (tab === "upstream"))
+  const parentOptions = useMemo(
+    () =>
+      groups
+        .filter((group) => !group.is_upstream)
+        .sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN")),
+    [groups],
+  )
+
+  const rows = useMemo(() => {
+    const out: { node: GroupNode; depth: number }[] = []
+    const walk = (list: GroupNode[], depth: number) => {
+      list.forEach((node) => {
+        out.push({ node, depth })
+        if (expanded[node.group.id] ?? !node.group.is_upstream) walk(node.children, depth + 1)
+      })
+    }
+    walk(buildTree(groups), 0)
+    return out
+  }, [groups, expanded])
 
   async function create() {
     setCreating(true)
     try {
       await api("/api/admin/groups", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), code: code.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          code: code.trim(),
+          parent_id: parentID === "" ? null : Number(parentID),
+        }),
       })
       setName("")
       setCode("")
+      setParentID("")
       setCreateOpen(false)
-      setTab("manual")
       await load()
     } catch (err) {
       onError((err as Error).message)
@@ -171,11 +221,15 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
     URL.revokeObjectURL(url)
   }
 
+  const childCount = pendingDelete
+    ? groups.filter((group) => group.parent_id === pendingDelete.id).length
+    : 0
+
   return (
     <div className="space-y-5">
       <Panel
         title="用户组"
-        description="手动维护的组由管理员管理成员；上游组按身份信息在登录时自动生成"
+        description="自定义组在前；上游组按身份层级折叠，登录时同步成员与父组"
         action={
           <Button className="h-9 w-auto px-3.5" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" strokeWidth={1.75} />
@@ -183,66 +237,90 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
           </Button>
         }
       >
-        <div className="flex items-center gap-1 border-b border-border px-4 py-2">
-          {tabs.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setTab(item.key)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-[12.5px] transition-colors",
-                tab === item.key
-                  ? "bg-secondary font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {item.label}
-              <span className="ml-1.5 text-[11.5px] text-muted-foreground">{counts[item.key]}</span>
-            </button>
-          ))}
+        <div className="flex items-center gap-4 border-b border-border px-6 py-2.5 text-[12px] text-muted-foreground">
+          <span>
+            自定义 <span className="text-foreground">{counts.manual}</span>
+          </span>
+          <span>
+            上游 <span className="text-foreground">{counts.upstream}</span>
+          </span>
         </div>
 
         <div className="divide-y divide-border">
-          {visible.map((group) => (
-            <div key={group.id} className="flex items-center justify-between gap-4 px-6 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-[13px] text-foreground">{group.name}</span>
-                  {group.is_upstream && (
-                    <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                      上游
-                    </span>
-                  )}
+          {rows.map(({ node, depth }) => {
+            const group = node.group
+            const open = expanded[group.id] ?? !group.is_upstream
+            const children = node.children.length
+
+            return (
+              <div
+                key={group.id}
+                className="flex items-center justify-between gap-4 py-2.5 pr-6"
+                style={{ paddingLeft: 20 + depth * 18 }}
+              >
+                <div className="flex min-w-0 items-start gap-1">
+                  <span className="flex size-5 shrink-0 items-center justify-center">
+                    {children > 0 && (
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        aria-label={open ? `收起 ${group.name}` : `展开 ${group.name}`}
+                        onClick={() =>
+                          setExpanded((prev) => ({ ...prev, [group.id]: !open }))
+                        }
+                        className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                      >
+                        <ChevronRight
+                          className={cn("size-3.5 transition-transform", open && "rotate-90")}
+                          strokeWidth={2.25}
+                        />
+                      </button>
+                    )}
+                  </span>
+                  <div className="min-w-0 pt-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[13px] text-foreground">{group.name}</span>
+                      {group.is_upstream && (
+                        <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          上游
+                        </span>
+                      )}
+                      {!open && children > 0 && (
+                        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                          {children} 个下级
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[12px] text-muted-foreground">
+                      {group.code}
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-0.5 font-mono text-[12px] text-muted-foreground">{group.code}</div>
-              </div>
-              <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
-                {group.is_upstream ? (
-                  <span className="text-[12.5px] text-muted-foreground">成员随登录同步</span>
-                ) : (
-                  <Button
-                    variant="outline"
-                    className="h-8 w-auto px-3"
-                    onClick={() => openMembers(group)}
+                <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
+                  {group.is_upstream ? (
+                    <span className="text-[12.5px] text-muted-foreground">成员随登录同步</span>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="h-8 w-auto px-3"
+                      onClick={() => openMembers(group)}
+                    >
+                      成员
+                    </Button>
+                  )}
+                  <button
+                    className="text-[12.5px] text-destructive hover:underline"
+                    onClick={() => setPendingDelete(group)}
                   >
-                    成员
-                  </Button>
-                )}
-                <button
-                  className="text-[12.5px] text-destructive hover:underline"
-                  onClick={() => setPendingDelete(group)}
-                >
-                  删除
-                </button>
+                    删除
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
-        {visible.length === 0 && (
-          <Empty>
-            {tab === "manual" ? "还没有手动维护的用户组" : "还没有同步到上游用户组"}
-          </Empty>
-        )}
+        {groups.length === 0 && <Empty>还没有用户组</Empty>}
       </Panel>
 
       <Modal
@@ -291,6 +369,21 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
             <span className="mt-1.5 block text-[12px] text-muted-foreground">
               用于程序引用的唯一标识，创建后不可修改
             </span>
+          </label>
+          <label className="block">
+            <span className="text-[12.5px] text-muted-foreground">父组</span>
+            <Select
+              className="mt-1.5 h-9 w-full"
+              value={parentID}
+              onChange={setParentID}
+            >
+              <option value="">无，作为顶级用户组</option>
+              {parentOptions.map((group) => (
+                <option key={group.id} value={String(group.id)}>
+                  {groupPath(groups, group)}
+                </option>
+              ))}
+            </Select>
           </label>
         </div>
       </Modal>
@@ -387,7 +480,9 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
       <ConfirmDialog
         open={pendingDelete !== null}
         title="删除用户组"
-        message={`删除「${pendingDelete?.name ?? ""}」后，该组的成员关系与授权关联会一并移除，操作不可撤销。`}
+        message={`删除「${pendingDelete?.name ?? ""}」后，该组的成员关系与授权关联会一并移除${
+          childCount > 0 ? `，${childCount} 个下级组会变为顶级组` : ""
+        }，操作不可撤销。`}
         confirmLabel="删除"
         danger
         onCancel={() => setPendingDelete(null)}

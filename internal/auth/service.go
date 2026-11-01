@@ -225,21 +225,30 @@ func (s *Service) saveUpstreamProfile(ctx context.Context, userID string, profil
 	return s.groups.SyncUpstream(ctx, userID, upstreamGroups(profile))
 }
 
+// upstreamGroups 按身份信息的层级生成组：专业挂在学院下，学院挂在用户类型下。
+// 同一学院既有本科生也有研究生，标识带上用户类型才能让每个身份各自成链。
 func upstreamGroups(profile portal.Profile) []repo.GroupSpec {
-	specs := make([]repo.GroupSpec, 0, 3)
-	for _, item := range []struct {
+	levels := []struct {
 		prefix string
 		value  string
 	}{
 		{"user_type", profile.UserType},
 		{"unit", profile.Unit},
 		{"major", profile.Major},
-	} {
-		value := strings.TrimSpace(item.value)
+	}
+
+	specs := make([]repo.GroupSpec, 0, len(levels))
+	path := make([]string, 0, len(levels))
+	parent := ""
+	for _, level := range levels {
+		value := strings.TrimSpace(level.value)
 		if value == "" {
 			continue
 		}
-		specs = append(specs, repo.GroupSpec{Code: item.prefix + ":" + value, Name: value})
+		path = append(path, value)
+		code := level.prefix + ":" + strings.Join(path, "/")
+		specs = append(specs, repo.GroupSpec{Code: code, Name: value, ParentCode: parent})
+		parent = code
 	}
 	return specs
 }

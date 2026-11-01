@@ -4,7 +4,8 @@ import { RotateCcw, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { ConfirmDialog, Empty, Panel, Select, api } from "./shared"
+import type { Group } from "./client-types"
+import { ConfirmDialog, Empty, Panel, Select, api, groupPath } from "./shared"
 
 type AdminUser = {
   id: string
@@ -14,8 +15,6 @@ type AdminUser = {
   status: number
   last_login_at?: string
 }
-
-type Group = { id: number; name: string; is_upstream: boolean }
 
 type Filters = { q: string; type: string; status: string; group: string }
 
@@ -170,7 +169,7 @@ export function UsersPanel({ onError }: { onError: (message: string) => void }) 
           <option value="">全部用户组</option>
           {groups.map((group) => (
             <option key={group.id} value={String(group.id)}>
-              {group.name}
+              {groupPath(groups, group)}
             </option>
           ))}
         </Select>

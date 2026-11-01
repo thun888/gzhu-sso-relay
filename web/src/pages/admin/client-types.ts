@@ -4,7 +4,13 @@ export type Scope = { name: string; display_name: string; description: string }
 
 export type Provider = { name: string; display_name: string }
 
-export type Group = { id: number; name: string; code: string; is_upstream: boolean }
+export type Group = {
+  id: number
+  name: string
+  code: string
+  is_upstream: boolean
+  parent_id?: number | null
+}
 
 export type Client = {
   client_id: string

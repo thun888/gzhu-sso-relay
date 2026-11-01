@@ -3,6 +3,21 @@ import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/ui/modal"
 import { cn } from "@/lib/utils"
+import type { Group } from "./client-types"
+
+// groupPath 返回从顶级到该组的名称路径，同名组靠它区分。
+export function groupPath(groups: Group[], group: Group): string {
+  const byID = new Map(groups.map((item) => [item.id, item]))
+  const names: string[] = []
+  const seen = new Set<number>()
+  let cursor: Group | undefined = group
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id)
+    names.unshift(cursor.name)
+    cursor = cursor.parent_id == null ? undefined : byID.get(cursor.parent_id)
+  }
+  return names.join(" / ")
+}
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -78,15 +93,18 @@ export function FormRow({
 export function Chip({
   active,
   label,
+  title,
   onClick,
 }: {
   active: boolean
   label: string
+  title?: string
   onClick: () => void
 }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       className={cn(
         "rounded-md border px-2.5 py-1 text-[12px] transition-colors",

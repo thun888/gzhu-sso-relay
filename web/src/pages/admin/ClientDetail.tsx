@@ -4,7 +4,7 @@ import { ArrowLeft, Copy, Search, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Client, Group, Member, Provider, Scope } from "./client-types"
-import { Chip, ConfirmDialog, api } from "./shared"
+import { Chip, ConfirmDialog, api, groupPath } from "./shared"
 
 type Props = {
   client: Client
@@ -547,6 +547,7 @@ export function ClientDetail({
                         key={group.id}
                         active={groupIds.includes(group.id)}
                         label={group.name}
+                        title={groupPath(groups, group)}
                         onClick={() =>
                           setGroupIds(
                             groupIds.includes(group.id)

@@ -234,6 +234,15 @@ func (h *Admin) PatchGroup(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "父组不存在"})
 				return
 			}
+			nested, err := h.groups.IsAncestorOf(c.Request.Context(), id, *req.ParentID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "校验父组失败"})
+				return
+			}
+			if nested {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "父组不能是自己的下级"})
+				return
+			}
 			fields["parent_id"] = *req.ParentID
 		}
 	}
