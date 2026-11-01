@@ -220,7 +220,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
 
   const qrHint =
     qrStatus === "waiting"
-      ? "使用微信『扫一扫』扫描二维码"
+      ? "使用企业微信『扫一扫』扫描二维码"
       : qrStatus === "expired"
         ? "二维码已失效，请刷新"
         : qrStatus === "failed"
