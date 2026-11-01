@@ -100,6 +100,24 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 
 `/` 展示当前登录用户的学号、姓名、邮箱、班级、用户组与第三方账号绑定状态。
 
+### 修改邮箱别名
+
+用户中心点击邮箱旁的编辑图标可申请修改邮箱，规则如下：
+
+1. 只允许修改 `@` 前的别名，后缀必须保持为该学号在 `server.email_domains` 中匹配到的后缀。
+2. 新邮箱不能与当前邮箱相同，也不能与任何其他账号的邮箱重复。
+3. 提交后 relay 向新邮箱发送确认邮件，链接有效期 30 分钟；再次申请会使旧链接失效。
+4. 在邮件中点击确认链接后才正式写入 `users.email`，之后 `/api/me`、OIDC 的 `email` claim 与各类通知邮件均以新邮箱为准。
+
+需要配置 `smtp` 才能使用；未配置时接口返回 503。
+
+| 查询参数（回跳用户中心时） | 含义 |
+| --- | --- |
+| `email_changed=1` | 邮箱已切换成功 |
+| `email_error=invalid` | 确认链接无效或已过期 |
+| `email_error=taken` | 等待确认期间该邮箱已被其他账号使用 |
+| `email_error=failed` | 写入数据库失败 |
+
 ### 第三方账号绑定
 
 绑定源来自 `bindings.providers` 配置，未配置时页面不显示该区域。来源若被设为私有，只有命中的用户在用户中心能看到该行，其他人看不到也无法发起绑定。
@@ -260,6 +278,8 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/me` | 当前用户、用户组与绑定状态 |
+| POST | `/api/email/change` | 申请修改邮箱别名，发送确认邮件 |
+| GET | `/api/email/confirm?token=` | 邮件确认链接，正式切换邮箱 |
 | GET | `/api/consent?req=` | 查询待确认授权 |
 | POST | `/api/consent` | 同意授权，返回继续地址 |
 | POST | `/api/consent/deny` | 拒绝授权，返回带 `error=access_denied` 的回跳地址 |

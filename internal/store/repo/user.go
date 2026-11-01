@@ -71,6 +71,27 @@ func (r *UserRepo) TouchLogin(ctx context.Context, id string, at time.Time) erro
 	return nil
 }
 
+func (r *UserRepo) EmailTaken(ctx context.Context, email, excludeID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("email = ? AND id <> ?", email, excludeID).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("repo: 检查邮箱占用: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *UserRepo) UpdateEmail(ctx context.Context, id, email string) error {
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", id).
+		Update("email", email).Error
+	if err != nil {
+		return fmt.Errorf("repo: 更新用户 %s 邮箱: %w", id, err)
+	}
+	return nil
+}
+
 type UserFilter struct {
 	Keyword string
 	Type    *int16

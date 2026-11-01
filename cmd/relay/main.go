@@ -22,6 +22,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
+	"github.com/thun888/gzhu-sso-relay/internal/emailchange"
 	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
 	"github.com/thun888/gzhu-sso-relay/internal/logo"
 	"github.com/thun888/gzhu-sso-relay/internal/mail"
@@ -121,14 +122,17 @@ func run() error {
 	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), cfg.Server.BaseURL)
 	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
 
-	notifier := notify.New(mail.NewSender(mail.Config{
+	sender := mail.NewSender(mail.Config{
 		Host:     cfg.SMTP.Host,
 		Port:     cfg.SMTP.Port,
 		Username: cfg.SMTP.Username,
 		Password: cfg.SMTP.Password,
 		FromName: cfg.SMTP.FromName,
 		From:     cfg.SMTP.From,
-	}), repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
+	})
+	notifier := notify.New(sender, repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
+	emailChanges := emailchange.NewStore(rdb)
+	emailHandler := httpapi.NewEmailChange(users, cfg.Server.EmailDomains, sender, emailChanges, cfg.Server.BaseURL, cfg.Server.AccountURL, cfg.Server.SiteTitle)
 
 	refresh := oidc.NewRefreshStore(rdb)
 
@@ -175,6 +179,8 @@ func run() error {
 	router.GET("/api/login/qrcode/:id", authHandler.PollQRLogin)
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
+	router.POST("/api/email/change", authHandler.RequireUser(), emailHandler.Request)
+	router.GET("/api/email/confirm", emailHandler.Confirm)
 	router.GET("/api/consent", authHandler.RequireUser(), consentHandler.Show)
 	router.POST("/api/consent", authHandler.RequireUser(), consentHandler.Approve)
 	router.POST("/api/consent/deny", authHandler.RequireUser(), consentHandler.Deny)

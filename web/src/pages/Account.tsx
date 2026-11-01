@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react"
-import { Link2, ShieldCheck } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
+import { Link2, PenLine, ShieldCheck } from "lucide-react"
 
 import { PageShell } from "@/components/page-shell"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Modal } from "@/components/ui/modal"
 import { cn } from "@/lib/utils"
 import { currentPath, safeNext } from "@/lib/config"
 
@@ -23,11 +25,20 @@ const bindErrors: Record<string, string> = {
   store: "保存绑定关系失败",
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+const emailErrors: Record<string, string> = {
+  invalid: "确认链接无效或已过期",
+  taken: "该邮箱已被其他账号使用",
+  failed: "切换邮箱失败，请稍后重试",
+}
+
+function Row({ label, value, action }: { label: string; value: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-6 border-b border-border py-3 last:border-b-0">
       <dt className="text-[13px] text-muted-foreground">{label}</dt>
-      <dd className="text-right text-[13.5px] break-all text-foreground">{value}</dd>
+      <dd className="flex items-center gap-2 text-right text-[13.5px] break-all text-foreground">
+        {value}
+        {action}
+      </dd>
     </div>
   )
 }
@@ -35,11 +46,17 @@ function Row({ label, value }: { label: string; value: string }) {
 export default function Account({ siteTitle }: { siteTitle: string }) {
   const [me, setMe] = useState<Me | null>(null)
   const [notice, setNotice] = useState("")
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [newEmail, setNewEmail] = useState("")
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [emailMsg, setEmailMsg] = useState("")
 
   const params = new URLSearchParams(window.location.search)
   const highlight = params.get("bind") ?? ""
   const bound = params.get("bound") ?? ""
   const bindError = params.get("bind_error") ?? ""
+  const emailChanged = params.get("email_changed") ?? ""
+  const emailError = params.get("email_error") ?? ""
   const resumeTo = params.get("next") ?? ""
 
   useEffect(() => {
@@ -49,6 +66,11 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
   useEffect(() => {
     if (bindError && bindErrors[bindError]) setNotice(bindErrors[bindError])
   }, [bindError])
+
+  useEffect(() => {
+    if (emailChanged) setNotice("邮箱已更新")
+    if (emailError && emailErrors[emailError]) setNotice(emailErrors[emailError])
+  }, [emailChanged, emailError])
 
   async function loadMe() {
     const res = await fetch("/api/me")
@@ -78,6 +100,32 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
     }
     setNotice("已解除绑定")
     await loadMe()
+  }
+
+  async function submitEmail() {
+    setEmailBusy(true)
+    setEmailMsg("")
+    try {
+      const res = await fetch("/api/email/change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail.trim() }),
+      })
+      if (res.status === 401) {
+        window.location.replace(`/login?next=${encodeURIComponent(currentPath())}`)
+        return
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null
+        setEmailMsg(data?.error ?? "提交失败，请稍后重试")
+        return
+      }
+      setEmailOpen(false)
+      setNotice("确认邮件已发送到新邮箱，请在 30 分钟内点击邮件中的链接完成切换")
+      setNewEmail("")
+    } finally {
+      setEmailBusy(false)
+    }
   }
 
   async function logout() {
@@ -122,9 +170,68 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
         <dl className="mt-6 border-t border-border">
           <Row label="学号" value={me.id} />
           <Row label="姓名" value={me.name} />
-          <Row label="邮箱" value={me.email} />
+          <Row
+            label="邮箱"
+            value={me.email}
+            action={
+              <button
+                type="button"
+                title="修改邮箱别名"
+                onClick={() => {
+                  setEmailMsg("")
+                  setNewEmail("")
+                  setEmailOpen(true)
+                }}
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <PenLine className="size-3.5" strokeWidth={1.75} />
+              </button>
+            }
+          />
           {me.belong_class && <Row label="班级" value={me.belong_class} />}
         </dl>
+
+        <Modal
+          open={emailOpen}
+          title="修改邮箱"
+          description={`当前邮箱 ${me.email}`}
+          onClose={() => setEmailOpen(false)}
+          footer={
+            <>
+              <Button variant="outline" className="h-9 w-auto px-4" onClick={() => setEmailOpen(false)}>
+                取消
+              </Button>
+              <Button
+                className="h-9 w-auto px-4"
+                disabled={!newEmail.trim() || emailBusy}
+                onClick={submitEmail}
+              >
+                {emailBusy ? "发送中" : "发送确认邮件"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <label className="block">
+              <span className="text-[12.5px] text-muted-foreground">新邮箱</span>
+              <Input
+                className="mt-1.5 h-9"
+                placeholder={me.email}
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newEmail.trim() && !emailBusy) submitEmail()
+                }}
+              />
+            </label>
+            <p className="text-[12px] text-muted-foreground">
+              只能修改 @ 前的别名部分，后缀需保持不变；确认邮件将发送到新邮箱，点击后才正式生效。
+            </p>
+            {emailMsg && (
+              <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">{emailMsg}</p>
+            )}
+          </div>
+        </Modal>
 
         {me.groups.length > 0 && (
           <div className="mt-6">
