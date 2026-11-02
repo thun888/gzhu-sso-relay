@@ -92,6 +92,28 @@ func (r *UserRepo) UpdateEmail(ctx context.Context, id, email string) error {
 	return nil
 }
 
+// Purge 删除账号及其全部关联记录，用于用户自助注销。
+func (r *UserRepo) Purge(ctx context.Context, id string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, table := range []any{
+			&model.OAuthAccount{},
+			&model.UserGroup{},
+			&model.Consent{},
+			&model.ClientUserGrant{},
+			&model.LoginNotice{},
+		} {
+			if err := tx.Where("user_id = ?", id).Delete(table).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Where("id = ?", id).Delete(&model.User{}).Error
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 删除用户 %s: %w", id, err)
+	}
+	return nil
+}
+
 type UserFilter struct {
 	Keyword string
 	Type    *int16

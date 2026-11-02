@@ -21,8 +21,8 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/cache"
 	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
+	"github.com/thun888/gzhu-sso-relay/internal/confirm"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
-	"github.com/thun888/gzhu-sso-relay/internal/emailchange"
 	"github.com/thun888/gzhu-sso-relay/internal/httpapi"
 	"github.com/thun888/gzhu-sso-relay/internal/logo"
 	"github.com/thun888/gzhu-sso-relay/internal/mail"
@@ -132,10 +132,12 @@ func run() error {
 	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
 
 	notifier := notify.New(sender, repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
-	emailChanges := emailchange.NewStore(rdb)
-	emailHandler := httpapi.NewEmailChange(users, cfg.Server.EmailDomains, sender, emailChanges, cfg.Server.BaseURL, cfg.Server.AccountURL, cfg.Server.SiteTitle)
 
 	refresh := oidc.NewRefreshStore(rdb)
+	confirmations := httpapi.NewConfirmation(users, confirm.NewStore(rdb), sender, cfg.Server.BaseURL)
+	emailHandler := httpapi.NewEmailChange(users, cfg.Server.EmailDomains, confirmations, cfg.Server.AccountURL, cfg.Server.SiteTitle)
+	deletionHandler := httpapi.NewAccountDeletion(users, sessions, refresh, confirmations, cfg.Server.LoginURL, cfg.Server.SiteTitle, secure)
+	confirmations.Register(emailHandler.Flow(), deletionHandler.Flow())
 
 	provider := oidc.New(oidc.Options{
 		Issuer:     cfg.Server.BaseURL,
@@ -181,7 +183,8 @@ func run() error {
 	router.POST("/api/logout", authHandler.Logout)
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
 	router.POST("/api/email/change", authHandler.RequireUser(), emailHandler.Request)
-	router.GET("/api/email/confirm", emailHandler.Confirm)
+	router.DELETE("/api/account", authHandler.RequireUser(), deletionHandler.Request)
+	router.GET("/api/confirm/:kind", confirmations.Confirm)
 	router.GET("/api/consent", authHandler.RequireUser(), consentHandler.Show)
 	router.POST("/api/consent", authHandler.RequireUser(), consentHandler.Approve)
 	router.POST("/api/consent/deny", authHandler.RequireUser(), consentHandler.Deny)

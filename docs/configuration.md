@@ -167,6 +167,7 @@ Redis 不持久化业务数据，但承载全部短期状态。启动时不会�
 | `relay:authfail:` | 15 分钟 | 上游认证尝试计数，上限 5 次 |
 | `relay:captcha:` | `captcha.fail_window` | 需要验证码的 IP 标记 |
 | `relay:qrlogin:` | 3 分钟 | 进行中的扫码登录，确认后缩短为 1 分钟 |
+| `relay:confirm:` | 30 分钟 | 邮件确认令牌，`kind` 为 `email` 或 `account`，读取即删除 |
 
 切换 Redis 库或清空数据会使用户重新登录，并丢失进行中的授权与绑定流程，不影响数据库中的用户与授权记录。
 

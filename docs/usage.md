@@ -118,6 +118,23 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 | `email_error=taken` | 等待确认期间该邮箱已被其他账号使用 |
 | `email_error=failed` | 写入数据库失败 |
 
+### 注销账号
+
+用户中心底部的「注销账号」需要邮件二次确认，确认前不做任何删除：
+
+1. 点击后 relay 向账号当前邮箱发送确认邮件，链接有效期 30 分钟；再次申请会使旧链接失效。
+2. 点击确认链接后，删除 `users` 中的账号记录，并一并删除 `oauth_accounts`、`user_groups`、`consents`、`client_user_grants`、`login_notices` 中该用户的记录，同时清空会话与刷新令牌，浏览器中的会话 cookie 立即失效。
+3. 管理员账号不能自助注销，接口返回 403。
+4. 未配置 `smtp` 时用户中心不显示该入口，接口返回 503。
+5. 上游身份信息不做改动，注销后再次登录会重新开通一个空白账号，原有绑定与授权不会恢复。
+
+| 查询参数（回跳登录页时） | 含义 |
+| --- | --- |
+| `account_deleted=1` | 账号已注销 |
+| `account_delete_error=invalid` | 确认链接无效或已过期 |
+| `account_delete_error=forbidden` | 管理员账号不能自助注销 |
+| `account_delete_error=failed` | 删除失败，请稍后重试 |
+
 ### 第三方账号绑定
 
 绑定源来自 `bindings.providers` 配置，未配置时页面不显示该区域。来源若被设为私有，只有命中的用户在用户中心能看到该行，其他人看不到也无法发起绑定。
@@ -282,7 +299,8 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | --- | --- | --- |
 | GET | `/api/me` | 当前用户、用户组与绑定状态 |
 | POST | `/api/email/change` | 申请修改邮箱别名，发送确认邮件 |
-| GET | `/api/email/confirm?token=` | 邮件确认链接，正式切换邮箱 |
+| DELETE | `/api/account` | 申请注销账号，向账号邮箱发送确认邮件 |
+| GET | `/api/confirm/<kind>?token=` | 邮件确认链接，`kind` 为 `email`（切换邮箱）或 `account`（注销账号） |
 | GET | `/api/consent?req=` | 查询待确认授权 |
 | POST | `/api/consent` | 同意授权，返回继续地址 |
 | POST | `/api/consent/deny` | 拒绝授权，返回带 `error=access_denied` 的回跳地址 |

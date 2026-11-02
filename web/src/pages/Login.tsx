@@ -39,6 +39,18 @@ function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
 
+const deleteErrors: Record<string, string> = {
+  invalid: "确认链接无效或已过期",
+  forbidden: "管理员账号不能自助注销",
+  failed: "注销失败，请稍后重试",
+}
+
+function accountNotice() {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("account_deleted")) return "账号已注销，本站保存的账号数据已删除"
+  return deleteErrors[params.get("account_delete_error") ?? ""] ?? ""
+}
+
 function usernameError(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return ""
@@ -74,6 +86,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
   const showFooter = footer.enabled && Boolean(footer.text.trim())
   const usernameInvalid = usernameError(username)
+  const notice = accountNotice()
 
   useEffect(() => {
     submitRef.current = (answer) => {
@@ -306,6 +319,12 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
               <p className="mt-1.5 text-[13px] text-muted-foreground">
                 欢迎回来，请使用以下方式登录
               </p>
+
+              {notice && (
+                <p className="mt-4 rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-[18px] text-foreground">
+                  {notice}
+                </p>
+              )}
 
               {qrLogin && (
                 <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-muted p-1">

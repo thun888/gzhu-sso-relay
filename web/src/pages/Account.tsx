@@ -13,7 +13,7 @@ type Me = {
   name: string
   email: string
   type: number
-  email_editable?: boolean
+  mail_enabled?: boolean
   belong_class: string
   groups: { id: number; name: string; code: string }[]
   bindings: { provider: string; display_name: string; bound: boolean; account?: string }[]
@@ -51,6 +51,9 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
   const [newEmail, setNewEmail] = useState("")
   const [emailBusy, setEmailBusy] = useState(false)
   const [emailMsg, setEmailMsg] = useState("")
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteMsg, setDeleteMsg] = useState("")
 
   const params = new URLSearchParams(window.location.search)
   const highlight = params.get("bind") ?? ""
@@ -134,6 +137,27 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
     window.location.replace("/login")
   }
 
+  async function requestDeletion() {
+    setDeleteBusy(true)
+    setDeleteMsg("")
+    try {
+      const res = await fetch("/api/account", { method: "DELETE" })
+      if (res.status === 401) {
+        window.location.replace(`/login?next=${encodeURIComponent(currentPath())}`)
+        return
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null
+        setDeleteMsg(data?.error ?? "提交失败，请稍后重试")
+        return
+      }
+      setDeleteOpen(false)
+      setNotice(`确认邮件已发送到 ${me?.email ?? "账号邮箱"}，请在 30 分钟内点击邮件中的链接完成注销`)
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   if (!me) {
     return (
       <PageShell>
@@ -175,7 +199,7 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
             label="邮箱"
             value={me.email}
             action={
-              me.email_editable ? (
+              me.mail_enabled ? (
                 <button
                   type="button"
                   title="修改邮箱别名"
@@ -312,6 +336,67 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
             <span className="text-[12px] text-muted-foreground">普通用户</span>
           )}
         </div>
+
+        {me.type !== 1 && me.mail_enabled && (
+          <div className="mt-10 flex flex-wrap items-start justify-between gap-3 border-t border-border pt-5">
+            <div className="min-w-0">
+              <div className="text-[13px] text-foreground">注销账号</div>
+              <p className="mt-1 text-[12px] leading-[1.7] text-muted-foreground">
+                永久删除本站保存的账号数据与授权记录，需要邮件二次确认。
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="h-9 w-auto shrink-0 px-4 text-destructive hover:text-destructive"
+              onClick={() => {
+                setDeleteMsg("")
+                setDeleteOpen(true)
+              }}
+            >
+              注销
+            </Button>
+          </div>
+        )}
+
+        <Modal
+          open={deleteOpen}
+          title="注销账号"
+          description={`确认邮件将发送到 ${me.email}`}
+          onClose={() => setDeleteOpen(false)}
+          footer={
+            <>
+              <Button variant="outline" className="h-9 w-auto px-4" onClick={() => setDeleteOpen(false)}>
+                取消
+              </Button>
+              <Button
+                variant="destructive"
+                className="h-9 w-auto px-4"
+                disabled={deleteBusy}
+                onClick={requestDeletion}
+              >
+                {deleteBusy ? "发送中" : "发送确认邮件"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-[12.5px] leading-[1.8] text-foreground">
+              注销后，本站保存的以下数据会被永久删除，且无法恢复：
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-[12.5px] leading-[1.8] text-muted-foreground">
+              <li>账号密码与个人资料快照</li>
+              <li>第三方账号绑定</li>
+              <li>用户组归属</li>
+              <li>应用授权记录与登录通知记录</li>
+            </ul>
+            <p className="text-[12px] leading-[1.7] text-muted-foreground">
+              所有已登录设备会立即退出。注销后再次登录会重新建立空白账号，原有绑定与授权不会恢复。
+            </p>
+            {deleteMsg && (
+              <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">{deleteMsg}</p>
+            )}
+          </div>
+        </Modal>
       </div>
     </PageShell>
   )
