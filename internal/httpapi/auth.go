@@ -17,6 +17,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
+	"github.com/thun888/gzhu-sso-relay/internal/upstream"
 )
 
 const (
@@ -65,6 +66,7 @@ func (h *Auth) Login(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	ip := c.ClientIP()
+	userAgent := upstream.RequestUserAgentWithIP(c.Request.UserAgent(), ip)
 	guard := h.captcha.Required(ctx, ip)
 
 	if guard {
@@ -76,7 +78,7 @@ func (h *Auth) Login(c *gin.Context) {
 		}
 	}
 
-	result, err := h.service.Login(ctx, req.Username, req.Password, c.Request.UserAgent())
+	result, err := h.service.Login(ctx, req.Username, req.Password, userAgent)
 	if err != nil {
 		log.Printf("登录失败 id=%s ip=%s: %v", req.Username, ip, err)
 		if errors.Is(err, auth.ErrInvalidCredentials) {
@@ -133,7 +135,8 @@ func (h *Auth) StartQRLogin(c *gin.Context) {
 		return
 	}
 
-	challenge, err := h.service.StartQRLogin(ctx, ip, c.Request.UserAgent(), sha256Hex(secret))
+	userAgent := upstream.RequestUserAgentWithIP(c.Request.UserAgent(), ip)
+	challenge, err := h.service.StartQRLogin(ctx, ip, userAgent, sha256Hex(secret))
 	if err != nil {
 		if errors.Is(err, auth.ErrTooManyAttempts) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "获取二维码过于频繁，请稍后再试"})
