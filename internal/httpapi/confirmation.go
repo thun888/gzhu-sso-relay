@@ -17,14 +17,17 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
 )
 
-// ConfirmFlow 描述一个需要邮件确认的流程：确认入口读到令牌后执行什么，以及结果如何回跳。
-// Apply 返回空串表示成功，否则作为 ErrorKey 的值带给前端。
+// ConfirmFlow 描述一个需要邮件确认的流程：确认页展示什么，点击确认后执行什么，
+// 以及结果如何回跳。Apply 返回空串表示成功，否则作为 ErrorKey 的值带给前端。
 type ConfirmFlow struct {
 	Kind       confirm.Kind
 	Action     string
 	Target     string
 	SuccessKey string
 	ErrorKey   string
+	Danger     bool
+	Note       string
+	Preview    func(*model.User, json.RawMessage) (string, bool)
 	Apply      func(*gin.Context, *model.User, json.RawMessage) string
 }
 
@@ -70,7 +73,10 @@ func (h *Confirmation) Send(c *gin.Context, kind confirm.Kind, user *model.User,
 		return
 	}
 
-	link := h.baseURL + "/api/confirm/" + string(kind) + "?token=" + url.QueryEscape(token)
+	link := h.baseURL + "/confirm?" + url.Values{
+		"kind":  {string(kind)},
+		"token": {token},
+	}.Encode()
 	subject, body := compose(link, h.store.TTL())
 	if err := h.sender.Send(to, subject, body); err != nil {
 		log.Printf("发送%s确认邮件失败 id=%s to=%s: %v", flow.Action, user.ID, to, err)
@@ -81,8 +87,31 @@ func (h *Confirmation) Send(c *gin.Context, kind confirm.Kind, user *model.User,
 	c.Status(http.StatusNoContent)
 }
 
-// Confirm 是邮件链接的统一入口，不依赖登录态，token 即凭证。
-func (h *Confirmation) Confirm(c *gin.Context) {
+// Preview 供确认页展示将要执行的操作，不消费令牌。
+func (h *Confirmation) Preview(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+
+	flow, user, payload, ok := h.resolve(c)
+	if !ok {
+		return
+	}
+
+	summary, valid := flow.Preview(user, payload)
+	if !valid {
+		c.JSON(http.StatusGone, gin.H{"error": "确认链接无效或已过期"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"action":  flow.Action,
+		"summary": summary,
+		"note":    flow.Note,
+		"danger":  flow.Danger,
+	})
+}
+
+// Submit 消费令牌并执行流程，结果通过 next 交给确认页跳转。
+func (h *Confirmation) Submit(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
 	flow, ok := h.flows[confirm.Kind(c.Param("kind"))]
@@ -94,24 +123,47 @@ func (h *Confirmation) Confirm(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, payload, err := h.store.Consume(ctx, flow.Kind, c.Query("token"))
 	if err != nil {
-		h.redirect(c, flow, "invalid")
+		c.JSON(http.StatusOK, gin.H{"next": resultURL(flow, "invalid")})
 		return
 	}
 
 	user, err := h.users.ByID(ctx, userID)
 	if err != nil {
-		h.redirect(c, flow, "invalid")
+		c.JSON(http.StatusOK, gin.H{"next": resultURL(flow, "invalid")})
 		return
 	}
 
-	h.redirect(c, flow, flow.Apply(c, user, payload))
+	c.JSON(http.StatusOK, gin.H{"next": resultURL(flow, flow.Apply(c, user, payload))})
+}
+
+// resolve 读取令牌与用户，失败时直接写出响应。
+func (h *Confirmation) resolve(c *gin.Context) (ConfirmFlow, *model.User, json.RawMessage, bool) {
+	flow, ok := h.flows[confirm.Kind(c.Param("kind"))]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未知的确认类型"})
+		return ConfirmFlow{}, nil, nil, false
+	}
+
+	ctx := c.Request.Context()
+	userID, payload, err := h.store.Peek(ctx, flow.Kind, c.Query("token"))
+	if err != nil {
+		c.JSON(http.StatusGone, gin.H{"error": "确认链接无效或已过期"})
+		return ConfirmFlow{}, nil, nil, false
+	}
+
+	user, err := h.users.ByID(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusGone, gin.H{"error": "确认链接无效或已过期"})
+		return ConfirmFlow{}, nil, nil, false
+	}
+	return flow, user, payload, true
 }
 
 func (h *Confirmation) Discard(ctx context.Context, kind confirm.Kind, userID string) error {
 	return h.store.Discard(ctx, kind, userID)
 }
 
-func (h *Confirmation) redirect(c *gin.Context, flow ConfirmFlow, errCode string) {
+func resultURL(flow ConfirmFlow, errCode string) string {
 	target, err := url.Parse(flow.Target)
 	if err != nil || target.Path == "" || !strings.HasPrefix(target.Path, "/") {
 		target = &url.URL{Path: "/"}
@@ -123,7 +175,7 @@ func (h *Confirmation) redirect(c *gin.Context, flow ConfirmFlow, errCode string
 		query.Set(flow.ErrorKey, errCode)
 	}
 	target.RawQuery = query.Encode()
-	c.Redirect(http.StatusFound, target.String())
+	return target.String()
 }
 
 func siteName(site string) string {

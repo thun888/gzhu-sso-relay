@@ -103,6 +103,27 @@ func (s *Store) Consume(ctx context.Context, kind Kind, token string) (string, j
 	return req.UserID, req.Data, nil
 }
 
+// Peek 读取待确认请求但不删除，供确认页展示将要执行的操作。
+func (s *Store) Peek(ctx context.Context, kind Kind, token string) (string, json.RawMessage, error) {
+	if token == "" {
+		return "", nil, ErrInvalid
+	}
+
+	raw, err := s.rdb.Get(ctx, tokenKey(kind, token)).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return "", nil, ErrInvalid
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("confirm: 读取待确认请求: %w", err)
+	}
+
+	var req entry
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return "", nil, fmt.Errorf("confirm: 解析待确认请求: %w", err)
+	}
+	return req.UserID, req.Data, nil
+}
+
 // Discard 丢弃该用户某个用途下的待确认请求，用于流程作废或账号数据清理。
 func (s *Store) Discard(ctx context.Context, kind Kind, userID string) error {
 	pending := userKey(kind, userID)

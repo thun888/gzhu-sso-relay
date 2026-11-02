@@ -48,6 +48,8 @@ func (h *EmailChange) Flow() ConfirmFlow {
 		Target:     h.accountURL,
 		SuccessKey: "email_changed",
 		ErrorKey:   "email_error",
+		Note:       "确认后新邮箱立即生效，替代当前邮箱作为后续所有服务返回的邮箱。",
+		Preview:    h.preview,
 		Apply:      h.apply,
 	}
 }
@@ -100,6 +102,14 @@ func (h *EmailChange) Request(c *gin.Context) {
 		})
 }
 
+func (h *EmailChange) preview(user *model.User, payload json.RawMessage) (string, bool) {
+	var req emailChangePayload
+	if err := json.Unmarshal(payload, &req); err != nil || req.Email == "" {
+		return "", false
+	}
+	return fmt.Sprintf("邮箱将从 %s 变更为 %s", user.Email, req.Email), true
+}
+
 // apply 在确认链接被访问时执行，切换前重查占用，避免等待期内被他人取用。
 func (h *EmailChange) apply(c *gin.Context, user *model.User, payload json.RawMessage) string {
 	var req emailChangePayload
@@ -139,7 +149,7 @@ func (h *EmailChange) subject() string {
 func (h *EmailChange) body(user *model.User, newEmail, link string, ttl time.Duration) string {
 	return fmt.Sprintf("%s（%s）你好：\n\n"+
 		"你正在申请把账号邮箱变更为 %s，确认后将替代 %s，作为后续所有服务返回的邮箱。\n\n"+
-		"请在 %d 分钟内点击以下链接完成确认：\n%s\n\n"+
+		"请在 %d 分钟内打开以下链接，在确认页点击确认：\n%s\n\n"+
 		"如非本人操作，请忽略本邮件。\n\n%s",
 		user.Name, user.ID, newEmail, user.Email, int(ttl.Minutes()), link, siteName(h.site))
 }

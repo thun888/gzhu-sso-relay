@@ -125,7 +125,7 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
         return
       }
       setEmailOpen(false)
-      setNotice("确认邮件已发送到新邮箱，请在 30 分钟内点击邮件中的链接完成切换")
+      setNotice("确认邮件已发送到新邮箱，请在 30 分钟内打开邮件中的链接完成确认")
       setNewEmail("")
     } finally {
       setEmailBusy(false)
@@ -152,7 +152,7 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
         return
       }
       setDeleteOpen(false)
-      setNotice(`确认邮件已发送到 ${me?.email ?? "账号邮箱"}，请在 30 分钟内点击邮件中的链接完成注销`)
+      setNotice(`确认邮件已发送到 ${me?.email ?? "账号邮箱"}，请在 30 分钟内打开邮件中的链接完成注销`)
     } finally {
       setDeleteBusy(false)
     }
@@ -252,7 +252,7 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
               />
             </label>
             <p className="text-[12px] text-muted-foreground">
-              只能修改 @ 前的别名部分，后缀需保持不变；确认邮件将发送到新邮箱，点击后才正式生效。
+              只能修改 @ 前的别名部分，后缀需保持不变；确认邮件将发送到新邮箱，打开链接进入确认页并点击确认后才生效。
             </p>
             {emailMsg && (
               <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">{emailMsg}</p>

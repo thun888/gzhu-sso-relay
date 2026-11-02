@@ -107,7 +107,7 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 1. 只允许修改 `@` 前的别名，后缀必须保持为该学号在 `server.email_domains` 中匹配到的后缀。
 2. 新邮箱不能与当前邮箱相同，也不能与任何其他账号的邮箱重复。
 3. 提交后 relay 向新邮箱发送确认邮件，链接有效期 30 分钟；再次申请会使旧链接失效。
-4. 在邮件中点击确认链接后才正式写入 `users.email`，之后 `/api/me`、OIDC 的 `email` claim 与各类通知邮件均以新邮箱为准。
+4. 邮件链接打开 `/confirm?kind=email&token=` 确认页，页面显示变更前后的邮箱，点击确认后才正式写入 `users.email`；之后 `/api/me`、OIDC 的 `email` claim 与各类通知邮件均以新邮箱为准。
 
 需要配置 `smtp` 才能使用；未配置时用户中心不显示编辑入口，接口返回 503。
 
@@ -123,7 +123,7 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 用户中心底部的「注销账号」需要邮件二次确认，确认前不做任何删除：
 
 1. 点击后 relay 向账号当前邮箱发送确认邮件，链接有效期 30 分钟；再次申请会使旧链接失效。
-2. 点击确认链接后，删除 `users` 中的账号记录，并一并删除 `oauth_accounts`、`user_groups`、`consents`、`client_user_grants`、`login_notices` 中该用户的记录，同时清空会话与刷新令牌，浏览器中的会话 cookie 立即失效。
+2. 邮件链接打开 `/confirm?kind=account&token=` 确认页，点击确认后删除 `users` 中的账号记录，并一并删除 `oauth_accounts`、`user_groups`、`consents`、`client_user_grants`、`login_notices` 中该用户的记录，同时清空会话与刷新令牌，浏览器中的会话 cookie 立即失效。
 3. 管理员账号不能自助注销，接口返回 403。
 4. 未配置 `smtp` 时用户中心不显示该入口，接口返回 503。
 5. 上游身份信息不做改动，注销后再次登录会重新开通一个空白账号，原有绑定与授权不会恢复。
@@ -300,7 +300,8 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | GET | `/api/me` | 当前用户、用户组与绑定状态 |
 | POST | `/api/email/change` | 申请修改邮箱别名，发送确认邮件 |
 | DELETE | `/api/account` | 申请注销账号，向账号邮箱发送确认邮件 |
-| GET | `/api/confirm/<kind>?token=` | 邮件确认链接，`kind` 为 `email`（切换邮箱）或 `account`（注销账号） |
+| GET | `/api/confirm/<kind>?token=` | 确认页读取摘要，不消费令牌；`kind` 为 `email`（切换邮箱）或 `account`（注销账号） |
+| POST | `/api/confirm/<kind>?token=` | 执行确认，返回下一步地址 `next` |
 | GET | `/api/consent?req=` | 查询待确认授权 |
 | POST | `/api/consent` | 同意授权，返回继续地址 |
 | POST | `/api/consent/deny` | 拒绝授权，返回带 `error=access_denied` 的回跳地址 |

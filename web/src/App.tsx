@@ -11,6 +11,7 @@ import {
 } from "@/lib/config"
 import Account from "@/pages/Account"
 import Admin from "@/pages/Admin"
+import Confirm from "@/pages/Confirm"
 import Consent from "@/pages/Consent"
 import Login from "@/pages/Login"
 
@@ -48,6 +49,7 @@ export default function App() {
       />
     )
   if (path === "/consent") return <Consent siteTitle={siteTitle} />
+  if (path === "/confirm") return <Confirm siteTitle={siteTitle} />
   if (path === "/admin") return <Admin siteTitle={siteTitle} />
   return <Account siteTitle={siteTitle} />
 }
