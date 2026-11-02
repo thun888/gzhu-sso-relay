@@ -126,13 +126,12 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return Profile{}, fmt.Errorf("portal: 用户信息返回 %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return Profile{}, fmt.Errorf("portal: 读取用户信息: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return Profile{}, fmt.Errorf("portal: 用户信息返回 %d: %s", resp.StatusCode, snippet(body))
 	}
 
 	var raw struct {
@@ -158,6 +157,22 @@ func (c *Client) Profile(ctx context.Context) (Profile, error) {
 		Unit:     raw.UnitName,
 		Major:    raw.BelongMajor,
 	}, nil
+}
+
+// snippet 压掉空白并截断，用于把上游错误页的线索带进日志而不撑爆单行。
+func snippet(body []byte) string {
+	if len(body) > 4096 {
+		body = body[:4096]
+	}
+	text := strings.Join(strings.Fields(string(body)), " ")
+	if text == "" {
+		return "空响应"
+	}
+	runes := []rune(text)
+	if len(runes) > 200 {
+		return string(runes[:200]) + "…"
+	}
+	return text
 }
 
 // jsonKeys 列出顶层字段名，用于定位上游返回结构变化，不输出字段值。
