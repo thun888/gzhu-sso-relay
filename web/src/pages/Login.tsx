@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Eye, EyeOff, Loader2, Lock, RefreshCw, User } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -289,7 +290,9 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
       className="relative min-h-screen w-full bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: "url(/background.webp)" }}
     >
-      <div className="flex min-h-screen items-center justify-center px-5 py-10">
+      <div className="pointer-events-none absolute inset-0 hidden bg-black/50 dark:block" />
+      <ThemeToggle className="fixed top-4 right-4 z-20" />
+      <div className="relative flex min-h-screen items-center justify-center px-5 py-10">
         <Card
           className={cn(
             "w-full gap-0 overflow-hidden border-border/70 bg-card/95 py-0 backdrop-blur-sm",
@@ -361,7 +364,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
                     ) : null}
                     {qrStatus === "expired" && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/90">
-                        <span className="text-[13px] text-muted-foreground">二维码已失效</span>
+                        <span className="text-[13px] text-zinc-600">二维码已失效</span>
                       </div>
                     )}
                   </div>

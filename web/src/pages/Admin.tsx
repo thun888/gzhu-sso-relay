@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link2, LayoutGrid, Users, UsersRound } from "lucide-react"
 
+import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
 import { BindingsPanel } from "./admin/BindingsPanel"
 import { ClientsPanel } from "./admin/ClientsPanel"
@@ -36,7 +37,7 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
   const current = sections.find((item) => item.key === section) ?? sections[0]
 
   return (
-    <div className="flex min-h-screen bg-[#f5f6f8]">
+    <div className="flex min-h-screen bg-[#f5f6f8] dark:bg-background">
       <aside className="sticky top-0 flex h-screen w-[208px] shrink-0 flex-col border-r border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <span className="size-1.5 rounded-full bg-primary" />
@@ -72,9 +73,12 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
             <span className="text-muted-foreground/40">/</span>
             <h1 className="font-medium text-foreground">{current.label}管理</h1>
           </div>
-          <a href="/" className="text-[12.5px] text-muted-foreground hover:text-foreground">
-            返回用户中心
-          </a>
+          <div className="flex items-center gap-1">
+            <a href="/" className="text-[12.5px] text-muted-foreground hover:text-foreground">
+              返回用户中心
+            </a>
+            <ThemeToggle />
+          </div>
         </header>
 
         <main className="min-w-0 flex-1 p-6">
