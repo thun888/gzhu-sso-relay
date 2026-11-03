@@ -46,7 +46,30 @@ func (h *Leader) Groups(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"groups": out})
 }
 
+type userCandidateView struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status int16  `json:"status"`
+}
+
 func (h *Leader) Users(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	led, err := h.groups.LedGroups(ctx, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询组长身份失败"})
+		return
+	}
+	if len(led) == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "需要组长权限"})
+		return
+	}
+
 	limit := 20
 	if raw := c.Query("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
@@ -55,7 +78,7 @@ func (h *Leader) Users(c *gin.Context) {
 	}
 
 	active := int16(model.UserStatusActive)
-	users, err := h.users.List(c.Request.Context(), repo.UserFilter{
+	users, err := h.users.List(ctx, repo.UserFilter{
 		Keyword: strings.TrimSpace(c.Query("q")),
 		Status:  &active,
 	}, limit)
@@ -64,9 +87,9 @@ func (h *Leader) Users(c *gin.Context) {
 		return
 	}
 
-	out := make([]repo.MemberView, 0, len(users))
+	out := make([]userCandidateView, 0, len(users))
 	for _, user := range users {
-		out = append(out, repo.MemberView{ID: user.ID, Name: user.Name, Email: user.Email, Status: user.Status})
+		out = append(out, userCandidateView{ID: user.ID, Name: user.Name, Status: user.Status})
 	}
 	c.JSON(http.StatusOK, gin.H{"users": out})
 }

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Empty, Panel, api, thClass, tdClass } from "./admin/shared"
 
 type Member = { id: string; name: string; email: string; status: number }
+type Candidate = { id: string; name: string; status: number }
 type LedGroup = { id: number; name: string; code: string }
 
 export default function Leader({ siteTitle }: { siteTitle: string }) {
@@ -16,7 +17,7 @@ export default function Leader({ siteTitle }: { siteTitle: string }) {
   const [members, setMembers] = useState<Member[]>([])
   const [leaders, setLeaders] = useState<Member[]>([])
   const [keyword, setKeyword] = useState("")
-  const [candidates, setCandidates] = useState<Member[]>([])
+  const [candidates, setCandidates] = useState<Candidate[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
 
@@ -75,7 +76,7 @@ export default function Leader({ siteTitle }: { siteTitle: string }) {
 
     const timer = setTimeout(async () => {
       try {
-        const data = await api<{ users: Member[] }>(
+        const data = await api<{ users: Candidate[] }>(
           `/api/leader/users?limit=8&q=${encodeURIComponent(query)}`,
           undefined,
           "需要组长权限",
@@ -88,7 +89,7 @@ export default function Leader({ siteTitle }: { siteTitle: string }) {
     return () => clearTimeout(timer)
   }, [keyword, selected, members])
 
-  async function addMember(user: Member) {
+  async function addMember(user: Candidate) {
     if (selected == null) return
     try {
       const data = await api<{ members: Member[]; leaders: Member[] }>(

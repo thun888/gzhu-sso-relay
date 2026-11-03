@@ -319,12 +319,12 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 
 ### 组长
 
-以下接口需要当前登录用户是目标用户组的组长，且目标组必须是自定义组。普通用户或其他组的组长访问会返回 403。
+以下接口需要已登录。涉及具体用户组的接口要求当前用户是该组的组长，且目标组必须是自定义组，普通用户或其他组的组长访问会返回 403；用户搜索要求当前用户至少担任一个组的组长。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/leader/groups` | 当前用户担任组长的用户组 |
-| GET | `/api/leader/users?q=&limit=` | 搜索可添加的启用用户 |
+| GET | `/api/leader/users?q=&limit=` | 搜索可添加的启用用户，仅返回学号、姓名与状态 |
 | GET | `/api/leader/groups/<id>/members` | 成员与组长列表 |
 | POST | `/api/leader/groups/<id>/members` | 添加成员 |
 | DELETE | `/api/leader/groups/<id>/members/<user_id>` | 移除成员，不能移除自己或其他组长 |
