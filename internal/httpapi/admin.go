@@ -34,11 +34,12 @@ type adminUserView struct {
 }
 
 type groupView struct {
-	ID         uint64  `json:"id"`
-	Name       string  `json:"name"`
-	Code       string  `json:"code"`
-	IsUpstream bool    `json:"is_upstream"`
-	ParentID   *uint64 `json:"parent_id"`
+	ID         uint64            `json:"id"`
+	Name       string            `json:"name"`
+	Code       string            `json:"code"`
+	IsUpstream bool              `json:"is_upstream"`
+	ParentID   *uint64           `json:"parent_id"`
+	Leaders    []repo.MemberView `json:"leaders"`
 }
 
 type userPatch struct {
@@ -197,15 +198,29 @@ func adminEmailIssue(email string) string {
 }
 
 func (h *Admin) ListGroups(c *gin.Context) {
-	groups, err := h.groups.List(c.Request.Context())
+	ctx := c.Request.Context()
+	groups, err := h.groups.List(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用户组失败"})
+		return
+	}
+	leaders, err := h.groups.AllLeaders(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询组长失败"})
 		return
 	}
 
 	out := make([]groupView, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, groupView{ID: g.ID, Name: g.Name, Code: g.Code, IsUpstream: g.IsUpstream, ParentID: g.ParentID})
+		view := groupView{
+			ID: g.ID, Name: g.Name, Code: g.Code,
+			IsUpstream: g.IsUpstream, ParentID: g.ParentID,
+			Leaders: leaders[g.ID],
+		}
+		if view.Leaders == nil {
+			view.Leaders = []repo.MemberView{}
+		}
+		out = append(out, view)
 	}
 	c.JSON(http.StatusOK, gin.H{"groups": out})
 }
@@ -231,7 +246,7 @@ func (h *Admin) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, groupView{ID: group.ID, Name: group.Name, Code: group.Code, IsUpstream: group.IsUpstream, ParentID: group.ParentID})
+	c.JSON(http.StatusCreated, groupView{ID: group.ID, Name: group.Name, Code: group.Code, IsUpstream: group.IsUpstream, ParentID: group.ParentID, Leaders: []repo.MemberView{}})
 }
 
 func (h *Admin) PatchGroup(c *gin.Context) {
@@ -315,6 +330,68 @@ func (h *Admin) DeleteGroup(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+type leadersPayload struct {
+	UserIDs []string `json:"user_ids"`
+}
+
+func (h *Admin) SetGroupLeaders(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+
+	var req leadersPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式不正确"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	group, err := h.groups.ByID(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户组不存在"})
+		return
+	}
+	if group.IsUpstream {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上游同步的用户组不支持设置组长"})
+		return
+	}
+
+	seen := make(map[string]struct{}, len(req.UserIDs))
+	userIDs := make([]string, 0, len(req.UserIDs))
+	for _, raw := range req.UserIDs {
+		userID := strings.TrimSpace(raw)
+		if userID == "" {
+			continue
+		}
+		if _, dup := seen[userID]; dup {
+			continue
+		}
+		user, err := h.users.ByID(ctx, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "用户 " + userID + " 不存在"})
+			return
+		}
+		if user.Status == model.UserStatusDisabled {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "用户 " + userID + " 已被禁用"})
+			return
+		}
+		seen[userID] = struct{}{}
+		userIDs = append(userIDs, userID)
+	}
+
+	if err := h.groups.SetLeaders(ctx, id, userIDs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置组长失败"})
+		return
+	}
+	leaders, err := h.groups.Leaders(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询组长失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"leaders": leaders})
+}
+
 func (h *Admin) GroupMembers(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
@@ -386,7 +463,18 @@ func (h *Admin) RemoveGroupMember(c *gin.Context) {
 		return
 	}
 
-	if err := h.groups.RemoveMember(ctx, id, c.Param("user_id")); err != nil {
+	userID := c.Param("user_id")
+	leader, err := h.groups.IsLeader(ctx, id, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询组长身份失败"})
+		return
+	}
+	if leader {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该成员是组长，请先取消组长身份"})
+		return
+	}
+
+	if err := h.groups.RemoveMember(ctx, id, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "移除成员失败"})
 		return
 	}

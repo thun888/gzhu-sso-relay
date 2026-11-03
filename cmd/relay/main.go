@@ -194,6 +194,7 @@ func run() error {
 	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
 	adminHandler := httpapi.NewAdmin(users, groups, sessions, refresh)
+	leaderHandler := httpapi.NewLeader(groups, users)
 	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry, logos)
 	adminBindings := httpapi.NewAdminBindings(registry, bindingACLs, groups, users)
 	router.GET("/api/clients/:id/logo", adminClients.Logo)
@@ -207,6 +208,7 @@ func run() error {
 	admin.GET("/groups/:id/members", adminHandler.GroupMembers)
 	admin.POST("/groups/:id/members", adminHandler.AddGroupMember)
 	admin.DELETE("/groups/:id/members/:user_id", adminHandler.RemoveGroupMember)
+	admin.PUT("/groups/:id/leaders", adminHandler.SetGroupLeaders)
 	admin.GET("/scopes", adminClients.Scopes)
 	admin.GET("/bindings", adminBindings.List)
 	admin.PUT("/bindings/:name", adminBindings.Update)
@@ -220,6 +222,13 @@ func run() error {
 	admin.POST("/clients/:id/secret", adminClients.RotateSecret)
 	admin.POST("/clients/:id/logo", adminClients.UploadLogo)
 	admin.DELETE("/clients/:id/logo", adminClients.DeleteLogo)
+
+	leader := router.Group("/api/leader", authHandler.RequireUser())
+	leader.GET("/groups", leaderHandler.Groups)
+	leader.GET("/users", leaderHandler.Users)
+	leader.GET("/groups/:id/members", leaderHandler.Members)
+	leader.POST("/groups/:id/members", leaderHandler.AddMember)
+	leader.DELETE("/groups/:id/members/:user_id", leaderHandler.RemoveMember)
 
 	spa, err := web.Handler()
 	if err != nil {

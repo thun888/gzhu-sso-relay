@@ -10,6 +10,7 @@ export type Group = {
   code: string
   is_upstream: boolean
   parent_id?: number | null
+  leaders: Member[]
 }
 
 export type Client = {

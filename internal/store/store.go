@@ -51,6 +51,7 @@ func Migrate(db *gorm.DB, logos *logo.Store) error {
 		&model.User{},
 		&model.Group{},
 		&model.UserGroup{},
+		&model.GroupLeader{},
 		&model.OAuthClient{},
 		&model.GroupOAuthClient{},
 		&model.Scope{},

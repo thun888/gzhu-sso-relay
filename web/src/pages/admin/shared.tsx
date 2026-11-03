@@ -19,7 +19,11 @@ export function groupPath(groups: Group[], group: Group): string {
   return names.join(" / ")
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function api<T>(
+  path: string,
+  init?: RequestInit,
+  forbiddenMessage = "需要管理员权限",
+): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -31,7 +35,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (res.status === 403) {
     window.location.replace("/")
-    throw new Error("需要管理员权限")
+    throw new Error(forbiddenMessage)
   }
   if (!res.ok) {
     const data = (await res.json().catch(() => null)) as { error?: string } | null

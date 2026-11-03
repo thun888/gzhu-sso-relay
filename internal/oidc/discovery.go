@@ -10,7 +10,7 @@ import (
 var supportedScopes = []string{"openid", "profile", "email", "groups"}
 
 var supportedClaims = []string{
-	"sub", "name", "preferred_username", "email", "email_verified", "belong_class", "groups",
+	"sub", "name", "preferred_username", "email", "email_verified", "belong_class", "groups", "group_roles",
 }
 
 func (p *Provider) Discovery(c *gin.Context) {

@@ -67,6 +67,16 @@ func (h *Account) Me(c *gin.Context) {
 		briefs = append(briefs, groupBrief{ID: group.ID, Name: group.Name, Code: group.Code})
 	}
 
+	led, err := h.groups.LedGroups(ctx, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询组长身份失败"})
+		return
+	}
+	ledBriefs := make([]groupBrief, 0, len(led))
+	for _, group := range led {
+		ledBriefs = append(ledBriefs, groupBrief{ID: group.ID, Name: group.Name, Code: group.Code})
+	}
+
 	stored, err := h.accounts.BindingsOf(ctx, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询绑定失败"})
@@ -104,6 +114,7 @@ func (h *Account) Me(c *gin.Context) {
 		"mail_enabled": h.mailEnabled,
 		"belong_class": h.accounts.ClassOf(ctx, user.ID, repo.UpstreamProvider),
 		"groups":       briefs,
+		"led_groups":   ledBriefs,
 		"bindings":     bindings,
 	})
 }

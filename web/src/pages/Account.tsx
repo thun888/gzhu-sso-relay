@@ -16,6 +16,7 @@ type Me = {
   mail_enabled?: boolean
   belong_class: string
   groups: { id: number; name: string; code: string }[]
+  led_groups: { id: number; name: string; code: string }[]
   bindings: { provider: string; display_name: string; bound: boolean; account?: string }[]
 }
 
@@ -328,13 +329,22 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
           <Button variant="outline" className="h-10" onClick={logout}>
             退出登录
           </Button>
-          {me.type === 1 ? (
-            <Button asChild className="h-10">
-              <a href="/admin">管理后台</a>
-            </Button>
-          ) : (
-            <span className="text-[12px] text-muted-foreground">普通用户</span>
-          )}
+          <div className="flex items-center gap-3">
+            {me.led_groups.length > 0 && (
+              <Button variant="outline" className="h-10" asChild>
+                <a href="/groups">我管理的用户组</a>
+              </Button>
+            )}
+            {me.type === 1 ? (
+              <Button asChild className="h-10">
+                <a href="/admin">管理后台</a>
+              </Button>
+            ) : (
+              me.led_groups.length === 0 && (
+                <span className="text-[12px] text-muted-foreground">普通用户</span>
+              )
+            )}
+          </div>
         </div>
 
         {me.type !== 1 && me.mail_enabled && (

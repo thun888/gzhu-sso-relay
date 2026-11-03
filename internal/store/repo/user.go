@@ -98,6 +98,7 @@ func (r *UserRepo) Purge(ctx context.Context, id string) error {
 		for _, table := range []any{
 			&model.OAuthAccount{},
 			&model.UserGroup{},
+			&model.GroupLeader{},
 			&model.Consent{},
 			&model.ClientUserGrant{},
 			&model.LoginNotice{},

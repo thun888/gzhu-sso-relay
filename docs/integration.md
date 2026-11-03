@@ -49,6 +49,7 @@ discovery 声明的能力：
 | `subject_types_supported` | `public` |
 | `id_token_signing_alg_values_supported` | `RS256` |
 | `scopes_supported` | `openid`、`profile`、`email`、`groups` |
+| `claims_supported` | `sub`、`name`、`preferred_username`、`email`、`email_verified`、`belong_class`、`groups`、`group_roles` |
 | `token_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `revocation_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `code_challenge_methods_supported` | `S256` |
@@ -177,7 +178,8 @@ Authorization: Bearer <access_token>
   "belong_class": "计算机 231",
   "email": "13800000000@gzhu.edu.cn",
   "email_verified": true,
-  "groups": ["major:计算机科学与技术", "unit:计算机学院", "user_type:学生"]
+  "groups": ["major:计算机科学与技术", "unit:计算机学院", "user_type:学生", "cs"],
+  "group_roles": { "cs": ["leader"] }
 }
 ```
 
@@ -213,7 +215,7 @@ token_type_hint=<access_token 或 refresh_token，可选>
 | `openid` | `sub` |
 | `profile` | `preferred_username`、`name`、`belong_class` |
 | `email` | `email`、`email_verified` |
-| `groups` | `groups` |
+| `groups` | `groups`、`group_roles` |
 
 | claim | 来源 | 说明 |
 | --- | --- | --- |
@@ -224,6 +226,23 @@ token_type_hint=<access_token 或 refresh_token，可选>
 | `email` | 首次登录时生成 | `<门户 MOBILE>@<域名后缀>` |
 | `email_verified` | 固定 | 恒为 `true` |
 | `groups` | 用户组 | 用户所在组的 `code` 数组，含祖先组；无组时省略 |
+| `group_roles` | 用户组角色 | 以组 `code` 为键、角色数组为值的对象，目前只有 `leader`；只含直接担任角色的组，不继承祖先组；无角色时省略 |
+
+`groups` 与 `group_roles` 都只出现在 `id_token` 与 userinfo 中，access token 不携带。需要实时反映组或组长变更的应用应调用 userinfo，或在刷新令牌后读取新的 `id_token`；已签发的令牌在有效期内仍是旧快照。
+
+```json
+{
+  "group_roles": {
+    "cs": ["leader"]
+  }
+}
+```
+
+`group_roles` 的键一定是 `groups` 的子集。下游判断组长身份时使用稳定的角色值 `leader`，不要依赖组名：
+
+```js
+const isLeader = claims.group_roles?.cs?.includes("leader")
+```
 
 未授予的 scope 不产生任何对应 claim。例如只申请 `openid`，`id_token` 与 userinfo 只有 `sub`。
 

@@ -66,6 +66,11 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
   const [keyword, setKeyword] = useState("")
   const [candidates, setCandidates] = useState<Member[]>([])
 
+  const [leaderGroup, setLeaderGroup] = useState<Group | null>(null)
+  const [leaders, setLeaders] = useState<Member[]>([])
+  const [leaderKeyword, setLeaderKeyword] = useState("")
+  const [leaderCandidates, setLeaderCandidates] = useState<Member[]>([])
+
   const [pendingDelete, setPendingDelete] = useState<Group | null>(null)
 
   const load = useCallback(async () => {
@@ -100,6 +105,26 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
     }, 250)
     return () => clearTimeout(timer)
   }, [keyword, memberGroup, members])
+
+  useEffect(() => {
+    const query = leaderKeyword.trim()
+    if (!leaderGroup || query.length < 2) {
+      setLeaderCandidates([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api<{ users: Member[] }>(
+          `/api/admin/users?limit=8&q=${encodeURIComponent(query)}`,
+        )
+        setLeaderCandidates(data.users.filter((user) => !leaders.some((l) => l.id === user.id)))
+      } catch {
+        setLeaderCandidates([])
+      }
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [leaderKeyword, leaderGroup, leaders])
 
   const counts = useMemo(
     () => ({
@@ -157,6 +182,33 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
       await api(`/api/admin/groups/${group.id}`, { method: "DELETE" })
       setPendingDelete(null)
       await load()
+    } catch (err) {
+      onError((err as Error).message)
+    }
+  }
+
+  function openLeaders(group: Group) {
+    setLeaderGroup(group)
+    setLeaders(group.leaders ?? [])
+    setLeaderKeyword("")
+    setLeaderCandidates([])
+  }
+
+  async function saveLeaders(next: Member[]) {
+    if (!leaderGroup) return
+    try {
+      const data = await api<{ leaders: Member[] }>(`/api/admin/groups/${leaderGroup.id}/leaders`, {
+        method: "PUT",
+        body: JSON.stringify({ user_ids: next.map((member) => member.id) }),
+      })
+      setLeaders(data.leaders)
+      setGroups((prev) =>
+        prev.map((group) =>
+          group.id === leaderGroup.id ? { ...group, leaders: data.leaders } : group,
+        ),
+      )
+      setLeaderKeyword("")
+      setLeaderCandidates([])
     } catch (err) {
       onError((err as Error).message)
     }
@@ -294,19 +346,35 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
                     <div className="mt-0.5 truncate font-mono text-[12px] text-muted-foreground">
                       {group.code}
                     </div>
+                    {!group.is_upstream && (
+                      <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
+                        {group.leaders.length > 0
+                          ? `组长 ${group.leaders.map((leader) => leader.name).join("、")}`
+                          : "未设组长"}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3 whitespace-nowrap">
                   {group.is_upstream ? (
                     <span className="text-[12.5px] text-muted-foreground">成员随登录同步</span>
                   ) : (
-                    <Button
-                      variant="outline"
-                      className="h-8 w-auto px-3"
-                      onClick={() => openMembers(group)}
-                    >
-                      成员
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        className="h-8 w-auto px-3"
+                        onClick={() => openLeaders(group)}
+                      >
+                        组长
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-8 w-auto px-3"
+                        onClick={() => openMembers(group)}
+                      >
+                        成员
+                      </Button>
+                    </>
                   )}
                   <button
                     className="text-[12.5px] text-destructive hover:underline"
@@ -473,6 +541,85 @@ export function GroupsPanel({ onError }: { onError: (message: string) => void })
 
           {members.length === 0 && (
             <p className="py-6 text-center text-[12.5px] text-muted-foreground">该组还没有成员</p>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={leaderGroup !== null}
+        title={`组长 · ${leaderGroup?.name ?? ""}`}
+        description="组长可以维护本组成员，任命后自动加入该组"
+        onClose={() => setLeaderGroup(null)}
+        width="max-w-[560px]"
+        footer={
+          <Button
+            variant="outline"
+            className="h-9 w-auto px-4"
+            onClick={() => setLeaderGroup(null)}
+          >
+            关闭
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+              strokeWidth={1.75}
+            />
+            <Input
+              className="h-9 pl-9"
+              placeholder="输入学号或姓名添加组长"
+              value={leaderKeyword}
+              onChange={(event) => setLeaderKeyword(event.target.value)}
+            />
+          </div>
+
+          {leaderCandidates.length > 0 && (
+            <div className="overflow-hidden rounded-md border border-border">
+              {leaderCandidates.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => saveLeaders([...leaders, user])}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                >
+                  <span className="min-w-0">
+                    <span className="text-[13px] text-foreground">{user.name}</span>
+                    <span className="ml-2 font-mono text-[12px] text-muted-foreground">{user.id}</span>
+                  </span>
+                  <span className="shrink-0 text-[12.5px] text-primary">设为组长</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {leaderKeyword.trim().length >= 2 && leaderCandidates.length === 0 && (
+            <p className="text-[12px] text-muted-foreground">没有可添加的用户</p>
+          )}
+
+          <div className="divide-y divide-border rounded-md border border-border">
+            {leaders.map((leader) => (
+              <div key={leader.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="min-w-0">
+                  <span className="text-[13px] text-foreground">{leader.name}</span>
+                  <span className="ml-2 font-mono text-[12px] text-muted-foreground">{leader.id}</span>
+                  {leader.status === 1 && (
+                    <span className="ml-2 text-[11.5px] text-destructive">已禁用</span>
+                  )}
+                </div>
+                <button
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`移除组长 ${leader.name}`}
+                  onClick={() => saveLeaders(leaders.filter((item) => item.id !== leader.id))}
+                >
+                  <X className="size-3.5" strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {leaders.length === 0 && (
+            <p className="py-6 text-center text-[12.5px] text-muted-foreground">该组还没有组长</p>
           )}
         </div>
       </Modal>

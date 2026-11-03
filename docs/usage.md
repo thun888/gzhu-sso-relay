@@ -8,6 +8,7 @@
 | `/` | 用户中心 | 已登录 |
 | `/consent?req=<id>` | 应用授权确认 | 已登录 |
 | `/admin` | 管理后台 | 管理员 |
+| `/groups` | 组长工作台 | 组长 |
 
 前端为单页应用，未命中的路径回落到 `index.html`。`/api/`、`/oidc/` 与 `/healthz` 不参与回落。
 
@@ -194,7 +195,14 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 | --- | --- |
 | 新建 | `name` 为展示名，`code` 为唯一标识，创建后不建议修改；可选一个已有的自定义组作为父组 |
 | 成员 | 输入学号，逗号或空格分隔；保存会整体替换该组成员 |
-| 删除 | 同时删除成员关系与应用的用户组限制，其下级组改为顶级组 |
+| 组长 | 管理员任命，支持多个；任命时自动把该用户加入组。组长可以在 `/groups` 维护本组成员，不能修改组资料、管理应用或任命其他组长 |
+| 删除 | 同时删除成员关系、组长身份与应用的用户组限制，其下级组改为顶级组 |
+
+组长只能管理自定义组，上游同步组不显示组长入口。组长移除成员时如果对方仍是组长，需要管理员先取消其组长身份；管理员移除成员时也会做同样的检查。
+
+组长身份会随 `groups` scope 写入 `id_token` 与 userinfo 的 `group_roles`，用户中心对有组长身份的用户显示「我管理的用户组」入口。
+
+组长添加成员等同于授予该成员访问该组关联私有应用的资格，任命组长前应确认这一权限范围。移除成员不会撤销已签发的 access token，下游在线调用 userinfo 或刷新令牌后才会看到变化。
 
 列表按层级展示，自定义组默认展开并排在最前，上游组默认折叠，展开后依次是身份、学院、专业。上游组的成员与父组在每次同步上游资料时重建，标识带上路径：`user_type:本科生`、`unit:本科生/计算机科学与网络工程学院`、`major:本科生/计算机科学与网络工程学院/计算机科学与技术`。同一学院同时有本科生与研究生时，两个身份下各有一个同名组，各自成链。
 
@@ -297,7 +305,7 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/me` | 当前用户、用户组与绑定状态 |
+| GET | `/api/me` | 当前用户、用户组、管理的用户组与绑定状态 |
 | POST | `/api/email/change` | 申请修改邮箱别名，发送确认邮件 |
 | DELETE | `/api/account` | 申请注销账号，向账号邮箱发送确认邮件 |
 | GET | `/api/confirm/<kind>?token=` | 确认页读取摘要，不消费令牌；`kind` 为 `email`（切换邮箱）或 `account`（注销账号） |
@@ -308,6 +316,18 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | GET | `/api/bindings/<provider>/start?next=` | 发起绑定 |
 | DELETE | `/api/bindings/<provider>` | 解除绑定 |
 | GET | `/bindings/<provider>/callback` | 绑定源回调 |
+
+### 组长
+
+以下接口需要当前登录用户是目标用户组的组长，且目标组必须是自定义组。普通用户或其他组的组长访问会返回 403。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/leader/groups` | 当前用户担任组长的用户组 |
+| GET | `/api/leader/users?q=&limit=` | 搜索可添加的启用用户 |
+| GET | `/api/leader/groups/<id>/members` | 成员与组长列表 |
+| POST | `/api/leader/groups/<id>/members` | 添加成员 |
+| DELETE | `/api/leader/groups/<id>/members/<user_id>` | 移除成员，不能移除自己或其他组长 |
 
 ### 管理员
 
@@ -320,7 +340,9 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | PATCH | `/api/admin/groups/<id>` | 修改名称、标识、父组 |
 | DELETE | `/api/admin/groups/<id>` | 删除用户组 |
 | GET | `/api/admin/groups/<id>/members` | 组成员 |
-| PUT | `/api/admin/groups/<id>/members` | 整体替换组成员 |
+| POST | `/api/admin/groups/<id>/members` | 添加组成员 |
+| DELETE | `/api/admin/groups/<id>/members/<user_id>` | 移除组成员 |
+| PUT | `/api/admin/groups/<id>/leaders` | 整体替换组长，自动补齐成员关系 |
 | GET | `/api/admin/scopes` | 全部 scope |
 | GET | `/api/admin/bindings` | 已配置的绑定源与各自的访问控制 |
 | PUT | `/api/admin/bindings/<provider>` | 保存绑定源访问范围、用户组与用户白名单 |

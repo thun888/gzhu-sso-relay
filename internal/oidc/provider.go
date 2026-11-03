@@ -130,6 +130,10 @@ func (p *Provider) claimsFor(ctx context.Context, user *model.User, scopes []str
 		if codes, err := p.groups.EffectiveCodes(ctx, user.ID); err == nil && len(codes) > 0 {
 			claims["groups"] = codes
 		}
+		// group_roles 只含直接担任角色的组，不向上继承。
+		if roles, err := p.groups.GroupRoles(ctx, user.ID); err == nil && len(roles) > 0 {
+			claims["group_roles"] = roles
+		}
 	}
 	return claims
 }

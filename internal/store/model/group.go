@@ -16,3 +16,10 @@ type UserGroup struct {
 	GroupID uint64 `gorm:"not null;uniqueIndex:idx_user_groups,priority:2;index"`
 	Timestamps
 }
+
+type GroupLeader struct {
+	ID      uint64 `gorm:"primaryKey"`
+	GroupID uint64 `gorm:"not null;uniqueIndex:idx_group_leaders,priority:1;index"`
+	UserID  string `gorm:"size:32;not null;uniqueIndex:idx_group_leaders,priority:2;index"`
+	Timestamps
+}

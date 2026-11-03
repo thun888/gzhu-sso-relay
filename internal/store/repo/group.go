@@ -63,6 +63,9 @@ func (r *GroupRepo) Delete(ctx context.Context, id uint64) error {
 		if err := tx.Where("group_id = ?", id).Delete(&model.UserGroup{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("group_id = ?", id).Delete(&model.GroupLeader{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("group_id = ?", id).Delete(&model.GroupOAuthClient{}).Error; err != nil {
 			return err
 		}
@@ -128,6 +131,126 @@ func (r *GroupRepo) RemoveMember(ctx context.Context, groupID uint64, userID str
 		return fmt.Errorf("repo: 把 %s 移出用户组 %d: %w", userID, groupID, err)
 	}
 	return nil
+}
+
+func (r *GroupRepo) Leaders(ctx context.Context, groupID uint64) ([]MemberView, error) {
+	leaders := make([]MemberView, 0)
+	err := r.db.WithContext(ctx).
+		Table("group_leaders").
+		Select("users.id, users.name, users.email, users.status").
+		Joins("JOIN users ON users.id = group_leaders.user_id").
+		Where("group_leaders.group_id = ?", groupID).
+		Order("users.id").
+		Scan(&leaders).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 列出用户组 %d 的组长: %w", groupID, err)
+	}
+	return leaders, nil
+}
+
+func (r *GroupRepo) AllLeaders(ctx context.Context) (map[uint64][]MemberView, error) {
+	var rows []struct {
+		GroupID uint64
+		ID      string
+		Name    string
+		Email   string
+		Status  int16
+	}
+	err := r.db.WithContext(ctx).
+		Table("group_leaders").
+		Select("group_leaders.group_id, users.id, users.name, users.email, users.status").
+		Joins("JOIN users ON users.id = group_leaders.user_id").
+		Order("group_leaders.group_id, users.id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 列出全部组长: %w", err)
+	}
+
+	out := make(map[uint64][]MemberView, len(rows))
+	for _, row := range rows {
+		out[row.GroupID] = append(out[row.GroupID], MemberView{
+			ID:     row.ID,
+			Name:   row.Name,
+			Email:  row.Email,
+			Status: row.Status,
+		})
+	}
+	return out, nil
+}
+
+func (r *GroupRepo) IsLeader(ctx context.Context, groupID uint64, userID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.GroupLeader{}).
+		Where("group_id = ? AND user_id = ?", groupID, userID).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("repo: 查询用户 %s 是否为组 %d 的组长: %w", userID, groupID, err)
+	}
+	return count > 0, nil
+}
+
+// SetLeaders 整体替换组长，并把新组长补成组员。
+func (r *GroupRepo) SetLeaders(ctx context.Context, groupID uint64, userIDs []string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("group_id = ?", groupID).Delete(&model.GroupLeader{}).Error; err != nil {
+			return err
+		}
+		for _, userID := range userIDs {
+			leader := model.GroupLeader{GroupID: groupID, UserID: userID}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&leader).Error; err != nil {
+				return err
+			}
+			member := model.UserGroup{GroupID: groupID, UserID: userID}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&member).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("repo: 设置用户组 %d 的组长: %w", groupID, err)
+	}
+	return nil
+}
+
+func (r *GroupRepo) LedGroups(ctx context.Context, userID string) ([]model.Group, error) {
+	groups := make([]model.Group, 0)
+	err := r.db.WithContext(ctx).
+		Joins("JOIN group_leaders ON group_leaders.group_id = groups.id").
+		Where("group_leaders.user_id = ?", userID).
+		Order("groups.id").
+		Find(&groups).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询用户 %s 管理的用户组: %w", userID, err)
+	}
+	return groups, nil
+}
+
+func (r *GroupRepo) LedCodes(ctx context.Context, userID string) ([]string, error) {
+	codes := make([]string, 0)
+	err := r.db.WithContext(ctx).
+		Table("group_leaders").
+		Select("groups.code").
+		Joins("JOIN groups ON groups.id = group_leaders.group_id").
+		Where("group_leaders.user_id = ?", userID).
+		Order("groups.code").
+		Pluck("groups.code", &codes).Error
+	if err != nil {
+		return nil, fmt.Errorf("repo: 查询用户 %s 的组长组标识: %w", userID, err)
+	}
+	return codes, nil
+}
+
+func (r *GroupRepo) GroupRoles(ctx context.Context, userID string) (map[string][]string, error) {
+	codes, err := r.LedCodes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	roles := make(map[string][]string, len(codes))
+	for _, code := range codes {
+		roles[code] = []string{"leader"}
+	}
+	return roles, nil
 }
 
 func (r *GroupRepo) OfUser(ctx context.Context, userID string) ([]model.Group, error) {
