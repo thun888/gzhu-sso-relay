@@ -40,6 +40,8 @@ function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
 
+const forgotPasswordUrl = "https://newcas.gzhu.edu.cn/cas/pwd?locale=zh_CN"
+
 const deleteErrors: Record<string, string> = {
   invalid: "确认链接无效或已过期",
   forbidden: "管理员账号不能自助注销",
@@ -461,6 +463,15 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
                   <Button type="submit" className="h-11 w-full" disabled={pending}>
                     {pending ? "登录中" : "登录"}
                   </Button>
+
+                  <a
+                    href={forgotPasswordUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3.5 block text-center text-[12.5px] text-muted-foreground transition-colors hover:text-primary"
+                  >
+                    忘记密码
+                  </a>
                 </form>
               )}
             </div>
