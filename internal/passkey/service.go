@@ -68,7 +68,7 @@ func New(opts Options) (*Service, error) {
 		RPOrigins:     []string{origin},
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
-			UserVerification: protocol.VerificationPreferred,
+			UserVerification: protocol.VerificationRequired,
 		},
 		AttestationPreference: protocol.PreferNoAttestation,
 	})
