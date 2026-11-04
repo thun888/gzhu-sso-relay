@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeft, Copy, Search, Upload, X } from "lucide-react"
+import { ArrowLeft, ChevronRight, Copy, Search, Upload, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import type { Client, Group, Member, Provider, Scope } from "./client-types"
 import { Chip, ConfirmDialog, api, groupPath } from "./shared"
 
@@ -99,6 +100,11 @@ export function ClientDetail({
 
   const [userQuery, setUserQuery] = useState("")
   const [candidates, setCandidates] = useState<Member[]>([])
+  const [upstreamOpen, setUpstreamOpen] = useState(false)
+
+  const localGroups = groups.filter((group) => !group.is_upstream)
+  const upstreamGroups = groups.filter((group) => group.is_upstream)
+  const pickedUpstream = upstreamGroups.filter((group) => groupIds.includes(group.id))
 
   const logoInput = useRef<HTMLInputElement | null>(null)
 
@@ -275,6 +281,22 @@ export function ClientDetail({
         setTimeout(() => setCopied(false), 1500)
       },
       () => undefined,
+    )
+  }
+
+  function toggleGroup(id: number) {
+    setGroupIds((ids) => (ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]))
+  }
+
+  function groupChip(group: Group) {
+    return (
+      <Chip
+        key={group.id}
+        active={groupIds.includes(group.id)}
+        label={group.name}
+        title={groupPath(groups, group)}
+        onClick={() => toggleGroup(group.id)}
+      />
     )
   }
 
@@ -542,25 +564,37 @@ export function ClientDetail({
                 <div>
                   <div className="text-[12px] text-muted-foreground">允许访问的用户组</div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {groups.map((group) => (
-                      <Chip
-                        key={group.id}
-                        active={groupIds.includes(group.id)}
-                        label={group.name}
-                        title={groupPath(groups, group)}
-                        onClick={() =>
-                          setGroupIds(
-                            groupIds.includes(group.id)
-                              ? groupIds.filter((id) => id !== group.id)
-                              : [...groupIds, group.id],
-                          )
-                        }
-                      />
-                    ))}
+                    {localGroups.map((group) => groupChip(group))}
                     {groups.length === 0 && (
                       <span className="block text-[12px] text-muted-foreground">还没有用户组</span>
                     )}
                   </div>
+
+                  {upstreamGroups.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        aria-expanded={upstreamOpen}
+                        onClick={() => setUpstreamOpen((open) => !open)}
+                        className="mt-2 flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <ChevronRight
+                          className={cn("size-3.5 transition-transform", upstreamOpen && "rotate-90")}
+                          strokeWidth={2.25}
+                        />
+                        上游用户组 {upstreamGroups.length}
+                        {!upstreamOpen && pickedUpstream.length > 0 && (
+                          <span className="text-primary">已选 {pickedUpstream.length}</span>
+                        )}
+                      </button>
+
+                      {upstreamOpen && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {upstreamGroups.map((group) => groupChip(group))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 <div>
