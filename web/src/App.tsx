@@ -22,6 +22,7 @@ export default function App() {
   const [footer, setFooter] = useState<LoginFooter>(emptyFooter)
   const [captcha, setCaptcha] = useState<CaptchaConfig>(emptyCaptcha)
   const [qrLogin, setQrLogin] = useState(false)
+  const [passkey, setPasskey] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -32,6 +33,7 @@ export default function App() {
       setFooter(config.footer)
       setCaptcha(config.captcha)
       setQrLogin(config.qrLogin)
+      setPasskey(config.passkey)
     })
     return () => {
       alive = false
@@ -47,11 +49,12 @@ export default function App() {
         footer={footer}
         captcha={captcha}
         qrLogin={qrLogin}
+        passkey={passkey}
       />
     )
   if (path === "/consent") return <Consent siteTitle={siteTitle} />
   if (path === "/confirm") return <Confirm siteTitle={siteTitle} />
   if (path === "/admin") return <Admin siteTitle={siteTitle} />
   if (path === "/groups") return <Leader siteTitle={siteTitle} />
-  return <Account siteTitle={siteTitle} />
+  return <Account siteTitle={siteTitle} passkey={passkey} />
 }

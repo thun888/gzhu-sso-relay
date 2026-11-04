@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { Eye, EyeOff, Loader2, Lock, RefreshCw, User } from "lucide-react"
+import { Eye, EyeOff, Fingerprint, Loader2, Lock, RefreshCw, User } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -8,6 +8,11 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { safeNext, type CaptchaConfig, type LoginFooter, type LoginPanel } from "@/lib/config"
 import { createCaptcha, type CaptchaAnswer, type CaptchaInstance } from "@/lib/geetest"
+import {
+  getPasskey,
+  passkeyErrorMessage,
+  passkeySupported,
+} from "@/lib/passkey"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -16,6 +21,7 @@ type Props = {
   footer: LoginFooter
   captcha: CaptchaConfig
   qrLogin: boolean
+  passkey: boolean
 }
 
 type loginResponse = {
@@ -35,6 +41,12 @@ type qrPollResult = {
 }
 
 type qrStatus = "loading" | "waiting" | "expired" | "failed"
+
+type passkeyOptions = {
+  publicKey?: Parameters<typeof getPasskey>[0]
+  error?: string
+  captcha_required?: boolean
+}
 
 function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
@@ -62,7 +74,7 @@ function usernameError(value: string) {
   return ""
 }
 
-export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Props) {
+export default function Login({ siteTitle, panel, footer, captcha, qrLogin, passkey }: Props) {
   const [mode, setMode] = useState<"password" | "qr">("password")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -77,15 +89,21 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
   const [qrAttempt, setQrAttempt] = useState(0)
   const [qrGated, setQrGated] = useState(false)
   const [qrCaptchaPending, setQrCaptchaPending] = useState(false)
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
+  const [passkeyError, setPasskeyError] = useState("")
+  const [passkeyGated, setPasskeyGated] = useState(false)
+  const [passkeyCaptchaPending, setPasskeyCaptchaPending] = useState(false)
 
   const widget = useRef<CaptchaInstance | null>(null)
   const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
   const qrStartRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
-  const captchaTargetRef = useRef<"password" | "qr">("password")
+  const passkeyRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
+  const captchaTargetRef = useRef<"password" | "qr" | "passkey">("password")
   const qrCaptchaOpenRef = useRef(false)
   const usernameRef = useRef<HTMLInputElement | null>(null)
 
-  const needCaptcha = captcha.enabled && (captcha.required || gated || qrGated)
+  const showPasskey = passkey && passkeySupported()
+  const needCaptcha = captcha.enabled && (captcha.required || gated || qrGated || passkeyGated)
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
   const showFooter = footer.enabled && Boolean(footer.text.trim())
   const usernameInvalid = usernameError(username)
@@ -94,6 +112,12 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
   useEffect(() => {
     submitRef.current = (answer) => {
       void submit(answer)
+    }
+  })
+
+  useEffect(() => {
+    passkeyRef.current = (answer) => {
+      void passkeyLogin(answer)
     }
   })
 
@@ -108,10 +132,18 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
           qrCaptchaOpenRef.current = false
           setQrCaptchaPending(false)
           qrStartRef.current(answer)
-        } else submitRef.current(answer)
+          return
+        }
+        if (captchaTargetRef.current === "passkey") {
+          setPasskeyCaptchaPending(false)
+          passkeyRef.current(answer)
+          return
+        }
+        submitRef.current(answer)
       },
       () => setError("验证加载异常，请刷新页面后重试"),
       () => {
+        setPasskeyCaptchaPending(false)
         if (!qrCaptchaOpenRef.current) return
         qrCaptchaOpenRef.current = false
         setQrCaptchaPending(false)
@@ -144,6 +176,11 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
     qrCaptchaOpenRef.current = true
     widget.current.showCaptcha()
   }, [mode, qrCaptchaPending, ready])
+
+  useEffect(() => {
+    if (!passkeyCaptchaPending || !ready || !widget.current) return
+    widget.current.showCaptcha()
+  }, [passkeyCaptchaPending, ready])
 
   useEffect(() => {
     if (mode !== "qr" || !qrLogin) return
@@ -250,6 +287,54 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
       setError("网络异常，请稍后重试")
     } finally {
       setPending(false)
+    }
+  }
+
+  async function passkeyLogin(answer?: CaptchaAnswer) {
+    if (passkeyBusy) return
+
+    setPasskeyError("")
+    setPasskeyBusy(true)
+    try {
+      const res = await fetch("/api/login/passkey/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captcha: answer }),
+      })
+      const options = (await res.json().catch(() => null)) as passkeyOptions | null
+
+      if (options?.captcha_required) {
+        widget.current?.reset()
+        captchaTargetRef.current = "passkey"
+        setPasskeyGated(true)
+        setPasskeyCaptchaPending(true)
+        return
+      }
+      if (!res.ok || !options?.publicKey) {
+        setPasskeyError(options?.error ?? "无法发起通行密钥登录")
+        return
+      }
+
+      widget.current?.reset()
+      const credential = await getPasskey(options.publicKey)
+      const finish = await fetch("/api/login/passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential),
+      })
+      const result = (await finish.json().catch(() => null)) as loginResponse | null
+
+      if (!finish.ok) {
+        setPasskeyError(result?.error ?? "通行密钥登录失败，请重试")
+        if (result?.captcha_required) setPasskeyGated(true)
+        return
+      }
+
+      window.location.replace(nextTarget())
+    } catch (err) {
+      setPasskeyError(passkeyErrorMessage(err))
+    } finally {
+      setPasskeyBusy(false)
     }
   }
 
@@ -473,6 +558,32 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin }: Pr
                     忘记密码
                   </a>
                 </form>
+              )}
+
+              {showPasskey && (
+                <div className="mt-6 border-t border-border/60 pt-4 text-center">
+                  {passkeyError && (
+                    <p
+                      className="mb-2 text-[12.5px] leading-[18px] text-destructive"
+                      role="alert"
+                    >
+                      {passkeyError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={passkeyBusy}
+                    onClick={() => passkeyRef.current()}
+                    className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-primary disabled:opacity-60"
+                  >
+                    {passkeyBusy ? (
+                      <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
+                    ) : (
+                      <Fingerprint className="size-3.5" strokeWidth={1.75} />
+                    )}
+                    {passkeyBusy ? "正在验证" : "通行密钥"}
+                  </button>
+                </div>
               )}
             </div>
 

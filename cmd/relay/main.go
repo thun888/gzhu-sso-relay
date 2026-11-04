@@ -28,6 +28,7 @@ import (
 	"github.com/thun888/gzhu-sso-relay/internal/mail"
 	"github.com/thun888/gzhu-sso-relay/internal/notify"
 	"github.com/thun888/gzhu-sso-relay/internal/oidc"
+	"github.com/thun888/gzhu-sso-relay/internal/passkey"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
@@ -110,6 +111,20 @@ func run() error {
 
 	authHandler := httpapi.NewAuth(authService, captchaPolicy, secure)
 
+	// 通行密钥依赖 WebAuthn 的域与来源约束，base_url 不是可用域名（例如直接写 IP）时整体关闭，
+	// 不影响账号密码与扫码登录。
+	passkeyService, err := passkey.New(passkey.Options{
+		Users:       users,
+		Passkeys:    repo.NewPasskeyRepo(db),
+		RDB:         rdb,
+		BaseURL:     cfg.Server.BaseURL,
+		DisplayName: cfg.Server.SiteTitle,
+	})
+	if err != nil {
+		log.Printf("通行密钥未启用: %v", err)
+	}
+	passkeyHandler := httpapi.NewPasskey(passkeyService, authService, captchaPolicy, secure)
+
 	registry, err := binding.NewRegistry(cfg.Bindings.Providers, nil)
 	if err != nil {
 		return err
@@ -176,11 +191,19 @@ func run() error {
 	router.POST("/oidc/token", provider.Token)
 	router.POST("/oidc/revoke", provider.Revoke)
 	router.GET("/oidc/userinfo", provider.UserInfo)
-	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy, cfg.Upstream.QRLogin))
+	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy, passkeyService, cfg.Upstream.QRLogin))
 	router.POST("/api/login", authHandler.Login)
 	router.POST("/api/login/qrcode", authHandler.StartQRLogin)
 	router.GET("/api/login/qrcode/:id", authHandler.PollQRLogin)
 	router.POST("/api/logout", authHandler.Logout)
+	if passkeyService.Enabled() {
+		router.POST("/api/login/passkey/options", passkeyHandler.LoginOptions)
+		router.POST("/api/login/passkey", passkeyHandler.Login)
+		router.GET("/api/passkeys", authHandler.RequireUser(), passkeyHandler.List)
+		router.POST("/api/passkeys/options", authHandler.RequireUser(), passkeyHandler.RegisterOptions)
+		router.POST("/api/passkeys", authHandler.RequireUser(), passkeyHandler.Register)
+		router.DELETE("/api/passkeys/:id", authHandler.RequireUser(), passkeyHandler.Delete)
+	}
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
 	router.POST("/api/email/change", authHandler.RequireUser(), emailHandler.Request)
 	router.DELETE("/api/account", authHandler.RequireUser(), deletionHandler.Request)

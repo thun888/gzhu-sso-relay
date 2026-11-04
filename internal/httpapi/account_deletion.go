@@ -109,7 +109,7 @@ func (h *AccountDeletion) subject() string {
 
 func (h *AccountDeletion) body(user *model.User, link string, ttl time.Duration) string {
 	return fmt.Sprintf("%s（%s）你好：\n\n"+
-		"我们收到了注销%s账号的请求。确认后将永久删除本站保存的账号记录，包括密码、第三方账号绑定、用户组归属、应用授权记录与登录通知记录，所有已登录的会话和已签发的令牌同时失效，删除后无法恢复。\n\n"+
+		"我们收到了注销%s账号的请求。确认后将永久删除本站保存的账号记录，包括密码、通行密钥、第三方账号绑定、用户组归属、应用授权记录与登录通知记录，所有已登录的会话和已签发的令牌同时失效，删除后无法恢复。\n\n"+
 		"请在 %d 分钟内打开以下链接，在确认页点击确认完成注销：\n%s\n\n"+
 		"如非本人操作，请忽略本邮件，账号不会有任何变化。\n\n%s",
 		user.Name, user.ID, siteName(h.site), int(ttl.Minutes()), link, siteName(h.site))

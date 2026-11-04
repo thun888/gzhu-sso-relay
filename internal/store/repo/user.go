@@ -102,6 +102,7 @@ func (r *UserRepo) Purge(ctx context.Context, id string) error {
 			&model.Consent{},
 			&model.ClientUserGrant{},
 			&model.LoginNotice{},
+			&model.Passkey{},
 		} {
 			if err := tx.Where("user_id = ?", id).Delete(table).Error; err != nil {
 				return err

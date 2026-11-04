@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -8,17 +8,28 @@ type Props = {
   title: string
   description?: string
   width?: string
+  layer?: number
   footer?: ReactNode
   onClose: () => void
   children: ReactNode
 }
 
-export function Modal({ open, title, description, width, footer, onClose, children }: Props) {
+// 打开的模态框栈顶才会响应 Esc，嵌套时不会一次关掉两层。
+const openLayers: symbol[] = []
+
+export function Modal({ open, title, description, width, layer = 0, footer, onClose, children }: Props) {
+  const idRef = useRef(Symbol("modal"))
+
   useEffect(() => {
     if (!open) return
 
+    const id = idRef.current
+    openLayers.push(id)
+
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose()
+      if (event.key !== "Escape") return
+      if (openLayers[openLayers.length - 1] !== id) return
+      onClose()
     }
 
     document.addEventListener("keydown", onKeyDown)
@@ -26,6 +37,8 @@ export function Modal({ open, title, description, width, footer, onClose, childr
     document.body.style.overflow = "hidden"
     return () => {
       document.removeEventListener("keydown", onKeyDown)
+      const index = openLayers.indexOf(id)
+      if (index >= 0) openLayers.splice(index, 1)
       document.body.style.overflow = overflow
     }
   }, [open, onClose])
@@ -33,7 +46,10 @@ export function Modal({ open, title, description, width, footer, onClose, childr
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 50 + layer * 10 }}
+    >
       <div className="absolute inset-0 bg-zinc-900/25" onClick={onClose} aria-hidden />
       <div
         role="dialog"

@@ -58,6 +58,23 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 | 该账号已被停用 | 403 | 本地账号被管理员禁用 |
 | 获取二维码过于频繁，请稍后再试 | 429 | 同一 IP 每分钟超过 12 次生成 |
 
+### 通行密钥
+
+登录页底部的「通行密钥」按钮走 WebAuthn 的无用户名流程，不需要先填学号，
+也不要求每台设备都记得密码。通行密钥必须在用户中心里先绑定：私钥留在设备上
+（指纹、面容、设备 PIN 或安全密钥），relay 只保存公钥与签名计数器。
+
+- RP ID 与来源都取自 `server.base_url`，换域或改回 http 会让已绑定的密钥失效。
+- 浏览器只在安全上下文里提供 WebAuthn，非 HTTPS 访问时登录页不显示这个入口。
+- 通行密钥不参与 `captcha.always`，不会每次都要过验证码；同一 IP 出现失败后，
+  下一次发起通行密钥登录才需要先完成极验验证，登录成功后标记清除。
+
+| 提示 | HTTP | 原因 |
+| --- | --- | --- |
+| 通行密钥验证失败，请重试 | 401 | 断言校验未通过、挑战过期或凭据不属于本站 |
+| 该账号已被停用 | 403 | 本地账号被管理员禁用 |
+| 请先完成验证 | 400 | 该 IP 已有失败记录，验证码未通过或已过期 |
+
 ### 会话
 
 | 项目 | 值 |
@@ -99,7 +116,7 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 
 ## 用户中心
 
-`/` 展示当前登录用户的学号、姓名、邮箱、班级、用户组与第三方账号绑定状态。
+`/` 展示当前登录用户的学号、姓名、邮箱、班级、通行密钥、用户组与第三方账号绑定状态。
 
 ### 修改邮箱别名
 
@@ -135,6 +152,13 @@ relay 每 2 秒用同一份 cookie 向上游查询一次状态，确认后跟进
 | `account_delete_error=invalid` | 确认链接无效或已过期 |
 | `account_delete_error=forbidden` | 管理员账号不能自助注销 |
 | `account_delete_error=failed` | 删除失败，请稍后重试 |
+
+### 通行密钥
+
+用户中心「通行密钥」一行显示已绑定的设备数量，点「管理」打开设备列表，点「添加设备」
+在弹出的第二层窗口里填写设备名后再按浏览器提示完成验证。同一账号可以绑定多台设备，
+换机或重装系统后旧记录会失效，可在列表里「解除」。绑定过程中挑战暂存在 Redis
+（`relay:passkey:reg:`），5 分钟未完成需重新开始。
 
 ### 第三方账号绑定
 
@@ -299,6 +323,8 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | POST | `/api/login` | 登录 |
 | POST | `/api/login/qrcode` | 生成扫码登录二维码，返回 `id`、`url` 与有效期 |
 | GET | `/api/login/qrcode/<id>` | 查询扫码状态，`pending` 表示等待中，`confirmed` 时下发会话 cookie |
+| POST | `/api/login/passkey/options` | 生成通行密钥登录参数，返回 `publicKey` |
+| POST | `/api/login/passkey` | 校验断言并下发会话 cookie |
 | POST | `/api/logout` | 退出登录 |
 
 ### 登录后
@@ -306,6 +332,10 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/me` | 当前用户、用户组、管理的用户组与绑定状态 |
+| GET | `/api/passkeys` | 当前账号已绑定的通行密钥设备 |
+| POST | `/api/passkeys/options` | 生成添加设备的参数，`name` 暂存于挑战中 |
+| POST | `/api/passkeys` | 提交注册结果，返回新设备 |
+| DELETE | `/api/passkeys/<id>` | 解除某台设备的通行密钥 |
 | POST | `/api/email/change` | 申请修改邮箱别名，发送确认邮件 |
 | DELETE | `/api/account` | 申请注销账号，向账号邮箱发送确认邮件 |
 | GET | `/api/confirm/<kind>?token=` | 确认页读取摘要，不消费令牌；`kind` 为 `email`（切换邮箱）或 `account`（注销账号） |

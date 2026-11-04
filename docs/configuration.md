@@ -53,6 +53,7 @@ redis:
 1. `id_token` 的 `iss` 与 discovery 文档中的 issuer。
 2. 绑定回调地址：`<base_url>/bindings/<provider>/callback`。
 3. 会话 cookie 是否带 `Secure`，判断依据是前缀是否为 `https://`。
+4. 通行密钥的 RP ID 与来源，取自该地址的主机名；填 IP 时 WebAuthn 校验无法通过，通行密钥会整体关闭。
 
 部署在反向代理之后时，填外部用户看到的地址，不要填容器内地址。
 

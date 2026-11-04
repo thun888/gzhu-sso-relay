@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Link2, PenLine, ShieldCheck } from "lucide-react"
+import { Link2, Loader2, PenLine, ShieldCheck } from "lucide-react"
 
 import { PageShell } from "@/components/page-shell"
 import { Button } from "@/components/ui/button"
@@ -7,6 +7,12 @@ import { Input } from "@/components/ui/input"
 import { Modal } from "@/components/ui/modal"
 import { cn } from "@/lib/utils"
 import { currentPath, safeNext } from "@/lib/config"
+import {
+  createPasskey,
+  defaultDeviceName,
+  passkeyErrorMessage,
+  passkeySupported,
+} from "@/lib/passkey"
 
 type Me = {
   id: string
@@ -27,6 +33,14 @@ const bindErrors: Record<string, string> = {
   store: "保存绑定关系失败",
 }
 
+type PasskeyDevice = {
+  id: string
+  name: string
+  synced: boolean
+  created_at: string
+  last_used_at: string | null
+}
+
 const emailErrors: Record<string, string> = {
   invalid: "确认链接无效或已过期",
   taken: "该邮箱已被其他账号使用",
@@ -45,7 +59,15 @@ function Row({ label, value, action }: { label: string; value: ReactNode; action
   )
 }
 
-export default function Account({ siteTitle }: { siteTitle: string }) {
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+}
+
+export default function Account({ siteTitle, passkey }: { siteTitle: string; passkey: boolean }) {
   const [me, setMe] = useState<Me | null>(null)
   const [notice, setNotice] = useState("")
   const [emailOpen, setEmailOpen] = useState(false)
@@ -55,6 +77,15 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteMsg, setDeleteMsg] = useState("")
+  const [devices, setDevices] = useState<PasskeyDevice[]>([])
+  const [deviceOpen, setDeviceOpen] = useState(false)
+  const [deviceAddOpen, setDeviceAddOpen] = useState(false)
+  const [deviceName, setDeviceName] = useState("")
+  const [deviceBusy, setDeviceBusy] = useState(false)
+  const [deviceMsg, setDeviceMsg] = useState("")
+  const [confirmId, setConfirmId] = useState("")
+
+  const passkeyEnabled = passkey && passkeySupported()
 
   const params = new URLSearchParams(window.location.search)
   const highlight = params.get("bind") ?? ""
@@ -67,6 +98,10 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
   useEffect(() => {
     loadMe()
   }, [])
+
+  useEffect(() => {
+    if (passkeyEnabled) void loadDevices()
+  }, [passkeyEnabled])
 
   useEffect(() => {
     if (bindError && bindErrors[bindError]) setNotice(bindErrors[bindError])
@@ -105,6 +140,79 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
     }
     setNotice("已解除绑定")
     await loadMe()
+  }
+
+  async function loadDevices() {
+    const res = await fetch("/api/passkeys")
+    if (res.status === 401) {
+      window.location.replace(`/login?next=${encodeURIComponent(currentPath())}`)
+      return
+    }
+    if (!res.ok) return
+    const data = (await res.json().catch(() => null)) as { passkeys?: PasskeyDevice[] } | null
+    setDevices(data?.passkeys ?? [])
+  }
+
+  function startAddDevice() {
+    setDeviceMsg("")
+    setDeviceName(defaultDeviceName())
+    setDeviceAddOpen(true)
+  }
+
+  async function addDevice() {
+    setDeviceBusy(true)
+    setDeviceMsg("")
+    try {
+      const res = await fetch("/api/passkeys/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: deviceName.trim() }),
+      })
+      if (res.status === 401) {
+        window.location.replace(`/login?next=${encodeURIComponent(currentPath())}`)
+        return
+      }
+      const options = (await res.json().catch(() => null)) as
+        | { publicKey?: Parameters<typeof createPasskey>[0]; error?: string }
+        | null
+      if (!res.ok || !options?.publicKey) {
+        setDeviceMsg(options?.error ?? "添加失败，请稍后重试")
+        return
+      }
+
+      const credential = await createPasskey(options.publicKey)
+      const created = await fetch("/api/passkeys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential),
+      })
+      const body = (await created.json().catch(() => null)) as
+        | { name?: string; error?: string }
+        | null
+      if (!created.ok) {
+        setDeviceMsg(body?.error ?? "添加失败，请稍后重试")
+        return
+      }
+
+      setDeviceAddOpen(false)
+      setNotice(`已添加通行密钥「${body?.name ?? deviceName}」`)
+      await loadDevices()
+    } catch (error) {
+      setDeviceMsg(passkeyErrorMessage(error))
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+
+  async function removeDevice(device: PasskeyDevice) {
+    const res = await fetch(`/api/passkeys/${encodeURIComponent(device.id)}`, { method: "DELETE" })
+    if (!res.ok) {
+      setNotice("解除通行密钥失败")
+      return
+    }
+    setConfirmId("")
+    setNotice(`已解除「${device.name}」`)
+    await loadDevices()
   }
 
   async function submitEmail() {
@@ -219,6 +327,34 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
           {me.belong_class && <Row label="班级" value={me.belong_class} />}
         </dl>
 
+        {passkeyEnabled && (
+          <div className="mt-6">
+            <div className="text-[12px] text-muted-foreground">通行密钥</div>
+            <div className="mt-2 flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[13.5px] text-foreground">
+                  {devices.length > 0 ? `已绑定 ${devices.length} 台设备` : "未绑定设备"}
+                </div>
+                <div className="text-[12px] text-muted-foreground">
+                  用指纹、面容或设备 PIN 代替密码登录
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0"
+                onClick={() => {
+                  setDeviceMsg("")
+                  setConfirmId("")
+                  setDeviceOpen(true)
+                }}
+              >
+                管理
+              </Button>
+            </div>
+          </div>
+        )}
+
         <Modal
           open={emailOpen}
           title="修改邮箱"
@@ -257,6 +393,141 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
             </p>
             {emailMsg && (
               <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">{emailMsg}</p>
+            )}
+          </div>
+        </Modal>
+
+        <Modal
+          open={deviceOpen}
+          title="通行密钥"
+          description="每台设备一条记录，登录时按浏览器提示选择"
+          onClose={() => {
+            setDeviceOpen(false)
+            setDeviceAddOpen(false)
+          }}
+          footer={
+            <>
+              <Button
+                variant="outline"
+                className="h-9 w-auto px-4"
+                onClick={() => {
+                  setDeviceOpen(false)
+                  setDeviceAddOpen(false)
+                }}
+              >
+                关闭
+              </Button>
+              <Button className="h-9 w-auto px-4" onClick={startAddDevice}>
+                添加设备
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-2">
+            {devices.length === 0 ? (
+              <p className="py-6 text-center text-[12.5px] text-muted-foreground">
+                还没有绑定任何设备
+              </p>
+            ) : (
+              devices.map((device) => (
+                <div
+                  key={device.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[13px] text-foreground">{device.name}</span>
+                      {device.synced && (
+                        <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          可同步
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      {formatDate(device.created_at)} 添加
+                      {device.last_used_at ? ` · ${formatDate(device.last_used_at)} 使用` : ""}
+                    </div>
+                  </div>
+                  {confirmId === device.id ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-destructive hover:text-destructive"
+                        onClick={() => removeDevice(device)}
+                      >
+                        确认解除
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-muted-foreground"
+                        onClick={() => setConfirmId("")}
+                      >
+                        取消
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 shrink-0 text-muted-foreground"
+                      onClick={() => setConfirmId(device.id)}
+                    >
+                      解除
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <p className="mt-3 text-[12px] leading-[1.7] text-muted-foreground">
+            私钥保存在设备上，本站只保存公钥。解除后该设备无法再用它登录，密码登录不受影响。
+          </p>
+        </Modal>
+
+        <Modal
+          open={deviceAddOpen}
+          layer={1}
+          title="添加通行密钥"
+          description="为这台设备起个名字"
+          onClose={() => setDeviceAddOpen(false)}
+          footer={
+            <>
+              <Button
+                variant="outline"
+                className="h-9 w-auto px-4"
+                onClick={() => setDeviceAddOpen(false)}
+              >
+                取消
+              </Button>
+              <Button className="h-9 w-auto px-4" disabled={deviceBusy} onClick={addDevice}>
+                {deviceBusy && <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />}
+                {deviceBusy ? "等待设备确认" : "开始添加"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <label className="block">
+              <span className="text-[12.5px] text-muted-foreground">设备名称</span>
+              <Input
+                className="mt-1.5 h-9"
+                maxLength={40}
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !deviceBusy) addDevice()
+                }}
+              />
+            </label>
+            <p className="text-[12px] leading-[1.7] text-muted-foreground">
+              点击开始添加后，按浏览器提示使用指纹、面容、设备 PIN 或安全密钥完成验证。同一账号可以绑定多台设备。
+            </p>
+            {deviceMsg && (
+              <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">
+                {deviceMsg}
+              </p>
             )}
           </div>
         </Modal>
@@ -394,7 +665,7 @@ export default function Account({ siteTitle }: { siteTitle: string }) {
               注销后，本站保存的以下数据会被永久删除，且无法恢复：
             </p>
             <ul className="list-disc space-y-1 pl-5 text-[12.5px] leading-[1.8] text-muted-foreground">
-              <li>账号密码与个人资料快照</li>
+              <li>账号密码、通行密钥与个人资料快照</li>
               <li>第三方账号绑定</li>
               <li>用户组归属</li>
               <li>应用授权记录与登录通知记录</li>

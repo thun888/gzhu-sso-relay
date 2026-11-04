@@ -124,6 +124,15 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	return s.sessions.Destroy(ctx, token)
 }
 
+// PasskeyLogin 通行密钥已在本站完成校验，用户身份确定后直接签发会话。
+func (s *Service) PasskeyLogin(ctx context.Context, userID string) (*Result, error) {
+	user, err := s.users.ByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.issue(ctx, user)
+}
+
 func (s *Service) SessionTTL() time.Duration {
 	return s.sessions.TTL()
 }
