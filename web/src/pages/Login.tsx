@@ -48,6 +48,9 @@ type passkeyOptions = {
   captcha_required?: boolean
 }
 
+// 预取的挑战只在两分钟内直接复用，留足余量给服务端五分钟的过期时间。
+const passkeyPrefetchTTL = 120_000
+
 function nextTarget() {
   return safeNext(new URLSearchParams(window.location.search).get("next") ?? "")
 }
@@ -100,6 +103,8 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
   const submitRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
   const qrStartRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
   const passkeyRef = useRef<(answer?: CaptchaAnswer) => void>(() => {})
+  const prefetched = useRef<{ options: passkeyOptions; at: number } | null>(null)
+  const prefetching = useRef<Promise<void> | null>(null)
   const captchaTargetRef = useRef<"password" | "qr" | "passkey">("password")
   const qrCaptchaOpenRef = useRef(false)
   const usernameRef = useRef<HTMLInputElement | null>(null)
@@ -127,6 +132,10 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
       void passkeyLogin(answer)
     }
   })
+
+  useEffect(() => {
+    prefetchPasskey()
+  }, [showPasskey])
 
   useEffect(() => {
     if (!needCaptcha || !captcha.captchaId) return
@@ -297,6 +306,45 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
     }
   }
 
+  async function requestPasskeyOptions(answer?: CaptchaAnswer) {
+    const res = await fetch("/api/login/passkey/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ captcha: answer }),
+    })
+    return { ok: res.ok, options: (await res.json().catch(() => null)) as passkeyOptions | null }
+  }
+
+  // 取一次可用的挑战：有新鲜的预取就直接用，否则发新请求。
+  // 先等掉还在路上的预取，避免两条响应的 Set-Cookie 交错，让挑战和 cookie 对不上。
+  async function takePasskeyOptions(answer?: CaptchaAnswer) {
+    if (prefetching.current) await prefetching.current
+
+    const cached = prefetched.current
+    prefetched.current = null
+    if (!answer && cached && Date.now() - cached.at < passkeyPrefetchTTL) {
+      return { ok: true, options: cached.options }
+    }
+    return requestPasskeyOptions(answer)
+  }
+
+  // 挑战先取好，点击时只剩系统弹窗这一段等待。
+  function prefetchPasskey() {
+    if (!showPasskey || prefetching.current) return
+
+    const cached = prefetched.current
+    if (cached && Date.now() - cached.at < passkeyPrefetchTTL) return
+
+    prefetching.current = requestPasskeyOptions()
+      .then(({ ok, options }) => {
+        if (ok && options?.publicKey) prefetched.current = { options, at: Date.now() }
+      })
+      .catch(() => {})
+      .finally(() => {
+        prefetching.current = null
+      })
+  }
+
   // 切到通行密钥的同时就发起验证，省掉再点一次。
   function selectMode(next: loginMode) {
     setMode(next)
@@ -309,12 +357,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
     setPasskeyError("")
     setPasskeyBusy(true)
     try {
-      const res = await fetch("/api/login/passkey/options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captcha: answer }),
-      })
-      const options = (await res.json().catch(() => null)) as passkeyOptions | null
+      const { ok, options } = await takePasskeyOptions(answer)
 
       if (options?.captcha_required) {
         widget.current?.reset()
@@ -323,12 +366,12 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
         setPasskeyCaptchaPending(true)
         return
       }
-      if (!res.ok || !options?.publicKey) {
+      if (!ok || !options?.publicKey) {
         setPasskeyError(options?.error ?? "无法发起通行密钥登录")
+        prefetchPasskey()
         return
       }
 
-      widget.current?.reset()
       const credential = await getPasskey(options.publicKey)
       const finish = await fetch("/api/login/passkey", {
         method: "POST",
@@ -340,6 +383,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
       if (!finish.ok) {
         setPasskeyError(result?.error ?? "通行密钥登录失败，请重试")
         if (result?.captcha_required) setPasskeyGated(true)
+        prefetchPasskey()
         return
       }
 
@@ -441,6 +485,12 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
                       key={tab.value}
                       type="button"
                       onClick={() => selectMode(tab.value)}
+                      onPointerEnter={() => {
+                        if (tab.value === "passkey") prefetchPasskey()
+                      }}
+                      onFocus={() => {
+                        if (tab.value === "passkey") prefetchPasskey()
+                      }}
                       className={cn(
                         "h-8 rounded-md text-[13px] transition-colors",
                         mode === tab.value
