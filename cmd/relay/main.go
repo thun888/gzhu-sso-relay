@@ -182,6 +182,7 @@ func run() error {
 	router.Use(
 		gin.Logger(),
 		gin.Recovery(),
+		httpapi.DefaultNoStore(),
 		httpapi.OriginGuard(cfg.Server.BaseURL),
 	)
 	router.GET("/healthz", healthz(db, rdb))

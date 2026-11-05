@@ -43,6 +43,18 @@ func WithSecurityHeaders(secure bool, next http.Handler) http.Handler {
 	})
 }
 
+// DefaultNoStore 给接口默认打上 no-store，避免令牌与用户数据被中间缓存留存。
+// 需要公开缓存的接口在写响应前改掉这个头即可。
+func DefaultNoStore() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/oidc/") || path == "/healthz" {
+			c.Header("Cache-Control", "no-store")
+		}
+		c.Next()
+	}
+}
+
 // OriginGuard 拦截跨站发起的状态变更请求。
 // 校内应用与本站同属一个注册域，被攻陷的子域发起请求时 cookie 仍会带上，
 // 仅靠 SameSite 不足以挡住，因此对 /api 的写请求额外比对 Origin。

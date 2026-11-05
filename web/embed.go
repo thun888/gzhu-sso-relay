@@ -34,8 +34,11 @@ func Handler(inline func(*http.Request) []byte) (http.Handler, error) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name != "" && name != "index.html" {
 			if info, err := fs.Stat(sub, name); err == nil && !info.IsDir() {
+				// 构建产物带内容哈希，可以长缓存；public 下的固定文件名只能短缓存。
 				if strings.HasPrefix(r.URL.Path, "/assets/") {
 					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else {
+					w.Header().Set("Cache-Control", "public, max-age=86400")
 				}
 				files.ServeHTTP(w, r)
 				return
@@ -54,6 +57,7 @@ func Handler(inline func(*http.Request) []byte) (http.Handler, error) {
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// 页面里内联了按 IP 判断的验证码标记，只能留在浏览器缓存里，不能让共享缓存转发。
 		w.Header().Set("Cache-Control", "private, no-cache")
 		_, _ = w.Write(page)
 	}), nil

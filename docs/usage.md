@@ -386,6 +386,19 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 
 ## 日常运维
 
+### 缓存
+
+| 路径 | 响应头 | 说明 |
+| --- | --- | --- |
+| `/assets/*` | `public, max-age=31536000, immutable` | 文件名带内容哈希，可长缓存 |
+| `/background.webp`、`/favicon.ico`、`/robots.txt` | `public, max-age=86400` | 文件名固定，只做一天缓存 |
+| 页面（`/login`、`/` 等） | `private, no-cache` | 内联了按 IP 判断的验证码标记，不能进共享缓存 |
+| `/.well-known/openid-configuration` | `public, max-age=300` | |
+| `/oidc/jwks` | `public, max-age=3600` | 轮换签名密钥后最长一小时生效 |
+| 其余 `/api/`、`/oidc/`、`/healthz` | `no-store` | 默认不缓存，需要公开缓存的接口自行覆盖 |
+
+CDN 上对 `/assets/` 放开缓存收益最大；页面与接口都需要回源。
+
 ### 日志
 
 访问日志与业务错误输出到标准输出。登录失败会记录学号、IP 与原因，不记录密码。容器部署时直接收集 stdout。
