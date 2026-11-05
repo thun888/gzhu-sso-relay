@@ -3,6 +3,7 @@ package avatar
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"net/url"
 	"strings"
 )
 
@@ -22,6 +23,15 @@ func New(base string) *Resolver {
 		base += "/"
 	}
 	return &Resolver{base: base}
+}
+
+// Origin 返回头像服务的源，用于内容安全策略。
+func (r *Resolver) Origin() string {
+	parsed, err := url.Parse(r.base)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // URL 返回邮箱对应的头像地址，邮箱为空时返回空串。

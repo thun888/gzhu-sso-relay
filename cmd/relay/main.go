@@ -274,7 +274,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
-		Handler:           httpapi.WithSecurityHeaders(secure, spaOrAPI(router, spa)),
+		Handler:           httpapi.WithSecurityHeaders(secure, avatars, spaOrAPI(router, spa)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
