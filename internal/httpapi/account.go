@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/avatar"
 	"github.com/thun888/gzhu-sso-relay/internal/binding"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
 )
@@ -18,11 +19,13 @@ type Account struct {
 	registry    *binding.Registry
 	acls        *repo.BindingACLRepo
 	states      *binding.StateStore
+	avatars     *avatar.Resolver
 	baseURL     string
 	mailEnabled bool
 }
 
-func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.GroupRepo, registry *binding.Registry, acls *repo.BindingACLRepo, states *binding.StateStore, baseURL string, mailEnabled bool) *Account {
+// avatars 为 nil 时 /api/me 不返回头像字段。
+func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.GroupRepo, registry *binding.Registry, acls *repo.BindingACLRepo, states *binding.StateStore, avatars *avatar.Resolver, baseURL string, mailEnabled bool) *Account {
 	return &Account{
 		users:       users,
 		accounts:    accounts,
@@ -30,6 +33,7 @@ func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.G
 		registry:    registry,
 		acls:        acls,
 		states:      states,
+		avatars:     avatars,
 		baseURL:     strings.TrimSuffix(baseURL, "/"),
 		mailEnabled: mailEnabled,
 	}
@@ -105,8 +109,7 @@ func (h *Account) Me(c *gin.Context) {
 		bindings = append(bindings, view)
 	}
 
-	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, gin.H{
+	payload := gin.H{
 		"id":           user.ID,
 		"name":         user.Name,
 		"email":        user.Email,
@@ -116,7 +119,15 @@ func (h *Account) Me(c *gin.Context) {
 		"groups":       briefs,
 		"led_groups":   ledBriefs,
 		"bindings":     bindings,
-	})
+	}
+	if h.avatars != nil {
+		if src := h.avatars.URL(user.Email); src != "" {
+			payload["avatar"] = src
+		}
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, payload)
 }
 
 func (h *Account) StartBinding(c *gin.Context) {

@@ -120,6 +120,27 @@ login_footer:
 
 `text` 里的 `{{commit}}` 会替换为构建时的短提交号，由 `build.sh` 注入；直接 `go build` 或 `go run` 时为 `dev`。例如 `text: "© 广州大学 · {{commit}}"`。
 
+## avatar
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `false` | 是否在 `/api/me` 返回 `avatar` 字段 |
+| `base_url` | `""` | gravatar 兼容镜像的前缀，留空使用 `https://www.gravatar.com/avatar/`，必须是 http 或 https 地址 |
+
+```yaml
+avatar:
+  enabled: true
+  base_url: "https://cravatar.cn/avatar/"
+```
+
+头像地址由用户邮箱转小写后取 MD5 十六进制，拼在 `base_url` 之后：
+
+```text
+<base_url><md5(email)>
+```
+
+用户邮箱为空时不返回该字段。镜像源只需与 gravatar 的 `/<hash>` 路径兼容，末尾斜杠可省略。关闭后 `/api/me` 不再出现 `avatar` 键，OIDC 的 claims 不受影响。
+
 ## secret_key
 
 必填，32 字节密钥，支持 base64 或 hex 编码。
@@ -287,6 +308,10 @@ server:
   login_footer:
     enabled: true
     text: "© 广州大学"
+
+avatar:
+  enabled: true
+  base_url: ""
 
 secret_key: "<openssl rand -base64 32 的输出>"
 

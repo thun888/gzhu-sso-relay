@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
+	"github.com/thun888/gzhu-sso-relay/internal/avatar"
 	"github.com/thun888/gzhu-sso-relay/internal/binding"
 	"github.com/thun888/gzhu-sso-relay/internal/cache"
 	"github.com/thun888/gzhu-sso-relay/internal/captcha"
@@ -143,7 +144,12 @@ func run() error {
 		From:     cfg.SMTP.From,
 	})
 
-	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), cfg.Server.BaseURL, sender.Enabled())
+	var avatars *avatar.Resolver
+	if cfg.Avatar.Enabled {
+		avatars = avatar.New(cfg.Avatar.BaseURL)
+	}
+
+	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), avatars, cfg.Server.BaseURL, sender.Enabled())
 	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
 
 	notifier := notify.New(sender, repo.NewNoticeRepo(db), cfg.Server.SiteTitle)

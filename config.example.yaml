@@ -38,6 +38,13 @@ server:
     enabled: true
     text: "© 广州大学"
 
+# 用户头像。地址由邮箱的 MD5 拼到头像服务前缀上，指向 gravatar。
+# enabled 为 false 时 /api/me 不返回 avatar 字段
+avatar:
+  enabled: true
+  # gravatar 兼容的镜像源，留空使用 https://www.gravatar.com/avatar/
+  base_url: ""
+
 # 32 字节密钥，base64 或 hex 编码，用于加密账号身份快照。可用 openssl rand -base64 32 生成
 secret_key: ""
 

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 type Config struct {
 	Server    Server   `yaml:"server"`
+	Avatar    Avatar   `yaml:"avatar"`
 	SecretKey string   `yaml:"secret_key"`
 	Database  Database `yaml:"database"`
 	Redis     Redis    `yaml:"redis"`
@@ -21,6 +23,13 @@ type Config struct {
 	SMTP      SMTP     `yaml:"smtp"`
 	Captcha   Captcha  `yaml:"captcha"`
 	Bindings  Bindings `yaml:"bindings"`
+}
+
+// Avatar 控制用户头像。enabled 为 false 时接口不返回 avatar 字段，
+// base_url 是 gravatar 兼容镜像的前缀，留空使用官方地址。
+type Avatar struct {
+	Enabled bool   `yaml:"enabled"`
+	BaseURL string `yaml:"base_url"`
 }
 
 // SMTP 登录通知邮件的发送通道，host 留空时关闭登录通知。
@@ -223,6 +232,12 @@ func (c *Config) validate() error {
 	}
 	if c.Upstream.RefreshRate < 0 || c.Upstream.RefreshRate > 1 {
 		return errors.New("upstream.refresh_rate 必须在 0 到 1 之间")
+	}
+	if c.Avatar.BaseURL != "" {
+		parsed, err := url.Parse(c.Avatar.BaseURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return errors.New("avatar.base_url 需要是 http 或 https 地址")
+		}
 	}
 	if c.Captcha.FailWindow <= 0 {
 		return errors.New("captcha.fail_window 必须为正数")
