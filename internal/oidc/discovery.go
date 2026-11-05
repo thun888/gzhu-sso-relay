@@ -13,6 +13,13 @@ var supportedClaims = []string{
 	"sub", "name", "preferred_username", "email", "email_verified", "belong_class", "groups", "group_roles",
 }
 
+func (p *Provider) claimsSupported() []string {
+	if p.avatars == nil {
+		return supportedClaims
+	}
+	return append(append([]string{}, supportedClaims...), "picture")
+}
+
 func (p *Provider) Discovery(c *gin.Context) {
 	c.Header("Cache-Control", "public, max-age=300")
 	c.JSON(http.StatusOK, gin.H{
@@ -27,7 +34,7 @@ func (p *Provider) Discovery(c *gin.Context) {
 		"subject_types_supported":                    []string{"public"},
 		"id_token_signing_alg_values_supported":      []string{"RS256"},
 		"scopes_supported":                           supportedScopes,
-		"claims_supported":                           supportedClaims,
+		"claims_supported":                           p.claimsSupported(),
 		"token_endpoint_auth_methods_supported":      []string{"client_secret_basic", "client_secret_post", "none"},
 		"revocation_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"code_challenge_methods_supported":           []string{"S256"},

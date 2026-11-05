@@ -49,7 +49,7 @@ discovery 声明的能力：
 | `subject_types_supported` | `public` |
 | `id_token_signing_alg_values_supported` | `RS256` |
 | `scopes_supported` | `openid`、`profile`、`email`、`groups` |
-| `claims_supported` | `sub`、`name`、`preferred_username`、`email`、`email_verified`、`belong_class`、`groups`、`group_roles` |
+| `claims_supported` | `sub`、`name`、`preferred_username`、`email`、`email_verified`、`belong_class`、`groups`、`group_roles`；开启头像时多一个 `picture` |
 | `token_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `revocation_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `code_challenge_methods_supported` | `S256` |
@@ -175,6 +175,7 @@ Authorization: Bearer <access_token>
   "sub": "20230001",
   "preferred_username": "20230001",
   "name": "张三",
+  "picture": "https://www.gravatar.com/avatar/6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c",
   "belong_class": "计算机 231",
   "email": "13800000000@gzhu.edu.cn",
   "email_verified": true,
@@ -213,7 +214,7 @@ token_type_hint=<access_token 或 refresh_token，可选>
 | scope | 产生的 claims |
 | --- | --- |
 | `openid` | `sub` |
-| `profile` | `preferred_username`、`name`、`belong_class` |
+| `profile` | `preferred_username`、`name`、`picture`、`belong_class` |
 | `email` | `email`、`email_verified` |
 | `groups` | `groups`、`group_roles` |
 
@@ -222,6 +223,7 @@ token_type_hint=<access_token 或 refresh_token，可选>
 | `sub` | 本地用户 ID | 学号或教工号，稳定不变 |
 | `preferred_username` | 本地用户 ID | 与 `sub` 相同 |
 | `name` | 门户 `USER_NAME` | 姓名 |
+| `picture` | 邮箱的 MD5 | gravatar 头像地址，由 `avatar.base_url` 决定镜像源；`avatar.enabled` 关闭时省略 |
 | `belong_class` | 门户 `BELONG_CLASS` | 班级，上游未返回时省略 |
 | `email` | 首次登录时生成 | `<门户 MOBILE>@<域名后缀>` |
 | `email_verified` | 固定 | 恒为 `true` |

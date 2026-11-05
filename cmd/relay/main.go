@@ -179,6 +179,7 @@ func run() error {
 		Revoked:    oidc.NewRevokedStore(rdb),
 		Notifier:   notifier,
 		Limiter:    oidc.NewTokenLimiter(rdb),
+		Avatars:    avatars,
 	})
 
 	router := gin.New()

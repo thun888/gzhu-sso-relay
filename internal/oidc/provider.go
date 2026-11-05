@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/thun888/gzhu-sso-relay/internal/avatar"
 	"github.com/thun888/gzhu-sso-relay/internal/notify"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
@@ -39,6 +40,7 @@ type Provider struct {
 	pending  *PendingStore
 	notifier *notify.Notifier
 	limiter  *TokenLimiter
+	avatars  *avatar.Resolver
 }
 
 type Options struct {
@@ -60,6 +62,7 @@ type Options struct {
 	Pending    *PendingStore
 	Notifier   *notify.Notifier
 	Limiter    *TokenLimiter
+	Avatars    *avatar.Resolver
 }
 
 func New(opts Options) *Provider {
@@ -82,6 +85,7 @@ func New(opts Options) *Provider {
 		pending:    opts.Pending,
 		notifier:   opts.Notifier,
 		limiter:    opts.Limiter,
+		avatars:    opts.Avatars,
 	}
 }
 
@@ -120,6 +124,12 @@ func (p *Provider) claimsFor(ctx context.Context, user *model.User, scopes []str
 		claims["name"] = user.Name
 		if class := p.classOf(ctx, user.ID); class != "" {
 			claims["belong_class"] = class
+		}
+		// avatars 为 nil 时不产生 picture，下游取不到头像字段。
+		if p.avatars != nil {
+			if src := p.avatars.URL(user.Email); src != "" {
+				claims["picture"] = src
+			}
 		}
 	}
 	if hasScope(scopes, "email") {

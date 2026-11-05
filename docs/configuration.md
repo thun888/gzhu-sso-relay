@@ -124,7 +124,7 @@ login_footer:
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `enabled` | `false` | 是否在 `/api/me` 返回 `avatar` 字段 |
+| `enabled` | `false` | 是否返回头像：`/api/me` 的 `avatar` 字段与 OIDC 的 `picture` claim |
 | `base_url` | `""` | gravatar 兼容镜像的前缀，留空使用 `https://www.gravatar.com/avatar/`，必须是 http 或 https 地址 |
 
 ```yaml
@@ -139,7 +139,9 @@ avatar:
 <base_url><md5(email)>
 ```
 
-用户邮箱为空时不返回该字段。镜像源只需与 gravatar 的 `/<hash>` 路径兼容，末尾斜杠可省略。关闭后 `/api/me` 不再出现 `avatar` 键，OIDC 的 claims 不受影响。
+用户邮箱为空时不产生该字段。镜像源只需与 gravatar 的 `/<hash>` 路径兼容，末尾斜杠可省略。
+
+`picture` claim 只随 `profile` scope 下发，出现在 `id_token` 与 userinfo 中；关闭后两处都不再返回头像，discovery 的 `claims_supported` 也去掉 `picture`。
 
 ## secret_key
 
