@@ -74,8 +74,10 @@ function usernameError(value: string) {
   return ""
 }
 
+type loginMode = "password" | "qr" | "passkey"
+
 export default function Login({ siteTitle, panel, footer, captcha, qrLogin, passkey }: Props) {
-  const [mode, setMode] = useState<"password" | "qr">("password")
+  const [mode, setMode] = useState<loginMode>("password")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [revealed, setRevealed] = useState(false)
@@ -103,6 +105,11 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
   const usernameRef = useRef<HTMLInputElement | null>(null)
 
   const showPasskey = passkey && passkeySupported()
+  const tabs: { value: loginMode; label: string }[] = [
+    { value: "password", label: "账号登录" },
+    ...(qrLogin ? [{ value: "qr", label: "微信扫码" } as const] : []),
+    ...(showPasskey ? [{ value: "passkey", label: "通行密钥" } as const] : []),
+  ]
   const needCaptcha = captcha.enabled && (captcha.required || gated || qrGated || passkeyGated)
   const showPanel = panel.enabled && Boolean(panel.title || panel.body)
   const showFooter = footer.enabled && Boolean(footer.text.trim())
@@ -290,6 +297,12 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
     }
   }
 
+  // 切到通行密钥的同时就发起验证，省掉再点一次。
+  function selectMode(next: loginMode) {
+    setMode(next)
+    if (next === "passkey" && mode !== "passkey") void passkeyLogin()
+  }
+
   async function passkeyLogin(answer?: CaptchaAnswer) {
     if (passkeyBusy) return
 
@@ -416,32 +429,60 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
                 </p>
               )}
 
-              {qrLogin && (
-                <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-muted p-1">
-                  {(
-                    [
-                      ["password", "账号登录"],
-                      ["qr", "微信扫码"],
-                    ] as const
-                  ).map(([value, label]) => (
+              {tabs.length > 1 && (
+                <div
+                  className={cn(
+                    "mt-6 grid gap-1 rounded-lg border border-border/60 bg-muted p-1",
+                    tabs.length === 3 ? "grid-cols-3" : "grid-cols-2",
+                  )}
+                >
+                  {tabs.map((tab) => (
                     <button
-                      key={value}
+                      key={tab.value}
                       type="button"
-                      onClick={() => setMode(value)}
+                      onClick={() => selectMode(tab.value)}
                       className={cn(
                         "h-8 rounded-md text-[13px] transition-colors",
-                        mode === value
+                        mode === tab.value
                           ? "bg-card text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
                           : "text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      {label}
+                      {tab.label}
                     </button>
                   ))}
                 </div>
               )}
 
-              {mode === "qr" ? (
+              {mode === "passkey" ? (
+                <div className="mt-6 flex min-h-[200px] flex-col items-center justify-center">
+                  <button
+                    type="button"
+                    disabled={passkeyBusy}
+                    onClick={() => void passkeyLogin()}
+                    aria-label="使用通行密钥登录"
+                    className="flex size-[76px] items-center justify-center rounded-full border border-border bg-muted text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-70"
+                  >
+                    {passkeyBusy ? (
+                      <Loader2 className="size-7 animate-spin" strokeWidth={1.5} />
+                    ) : (
+                      <Fingerprint className="size-7" strokeWidth={1.5} />
+                    )}
+                  </button>
+                  <p
+                    className={cn(
+                      "mt-4 min-h-[18px] px-2 text-center text-[12.5px] leading-[18px]",
+                      passkeyError ? "text-destructive" : "text-muted-foreground",
+                    )}
+                    role="status"
+                  >
+                    {passkeyError ||
+                      (passkeyBusy
+                        ? "请在设备上完成验证"
+                        : "点击按系统提示使用指纹、面容或设备 PIN")}
+                  </p>
+                </div>
+              ) : mode === "qr" ? (
                 <div className="mt-5">
                   <div className="relative mx-auto flex size-[200px] items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
                     {qrImage ? (
@@ -558,32 +599,6 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
                     忘记密码
                   </a>
                 </form>
-              )}
-
-              {showPasskey && (
-                <div className="mt-6 border-t border-border/60 pt-4 text-center">
-                  {passkeyError && (
-                    <p
-                      className="mb-2 text-[12.5px] leading-[18px] text-destructive"
-                      role="alert"
-                    >
-                      {passkeyError}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    disabled={passkeyBusy}
-                    onClick={() => passkeyRef.current()}
-                    className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-primary disabled:opacity-60"
-                  >
-                    {passkeyBusy ? (
-                      <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
-                    ) : (
-                      <Fingerprint className="size-3.5" strokeWidth={1.75} />
-                    )}
-                    {passkeyBusy ? "正在验证" : "通行密钥"}
-                  </button>
-                </div>
               )}
             </div>
 
