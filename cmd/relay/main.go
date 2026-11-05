@@ -253,7 +253,10 @@ func run() error {
 	leader.POST("/groups/:id/members", leaderHandler.AddMember)
 	leader.DELETE("/groups/:id/members/:user_id", leaderHandler.RemoveMember)
 
-	spa, err := web.Handler()
+	clientIPs := httpapi.NewClientIPResolver(cfg.Server.TrustedProxies)
+	spa, err := web.Handler(func(r *http.Request) []byte {
+		return httpapi.InlineConfig(r.Context(), clientIPs.Of(r), cfg.Server, captchaPolicy, passkeyService, cfg.Upstream.QRLogin)
+	})
 	if err != nil {
 		return err
 	}

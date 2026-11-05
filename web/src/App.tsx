@@ -4,10 +4,9 @@ import {
   emptyCaptcha,
   emptyFooter,
   emptyPanel,
+  inlineConfig,
   loadPublicConfig,
-  type CaptchaConfig,
-  type LoginFooter,
-  type LoginPanel,
+  type PublicConfig,
 } from "@/lib/config"
 import Account from "@/pages/Account"
 import Admin from "@/pages/Admin"
@@ -17,28 +16,26 @@ import Leader from "@/pages/Leader"
 import Login from "@/pages/Login"
 
 export default function App() {
-  const [siteTitle, setSiteTitle] = useState("")
-  const [panel, setPanel] = useState<LoginPanel>(emptyPanel)
-  const [footer, setFooter] = useState<LoginFooter>(emptyFooter)
-  const [captcha, setCaptcha] = useState<CaptchaConfig>(emptyCaptcha)
-  const [qrLogin, setQrLogin] = useState(false)
-  const [passkey, setPasskey] = useState(false)
+  const [config, setConfig] = useState<PublicConfig | null>(() => inlineConfig())
 
   useEffect(() => {
+    if (config) return
+
     let alive = true
-    loadPublicConfig().then((config) => {
-      if (!alive) return
-      setSiteTitle(config.siteTitle)
-      setPanel(config.panel)
-      setFooter(config.footer)
-      setCaptcha(config.captcha)
-      setQrLogin(config.qrLogin)
-      setPasskey(config.passkey)
+    loadPublicConfig().then((loaded) => {
+      if (alive) setConfig(loaded)
     })
     return () => {
       alive = false
     }
-  }, [])
+  }, [config])
+
+  const siteTitle = config?.siteTitle ?? ""
+  const panel = config?.panel ?? emptyPanel
+  const footer = config?.footer ?? emptyFooter
+  const captcha = config?.captcha ?? emptyCaptcha
+  const qrLogin = config?.qrLogin ?? false
+  const passkey = config?.passkey ?? false
 
   const path = window.location.pathname
   if (path === "/login")

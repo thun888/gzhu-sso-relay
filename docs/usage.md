@@ -320,7 +320,7 @@ GZHU_USERNAME=<学号> GZHU_PASSWORD=<密码> ./bin/casprobe
 | POST | `/oidc/token` | 令牌端点，支持授权码与刷新令牌 |
 | POST | `/oidc/revoke` | 撤销令牌 |
 | GET | `/oidc/userinfo` | 用户信息端点 |
-| GET | `/api/public/config` | 登录页所需的公开配置 |
+| GET | `/api/public/config` | 登录页所需的公开配置，页面已内联时为兜底 |
 | POST | `/api/login` | 登录 |
 | POST | `/api/login/qrcode` | 生成扫码登录二维码，返回 `id`、`url` 与有效期 |
 | GET | `/api/login/qrcode/<id>` | 查询扫码状态，`pending` 表示等待中，`confirmed` 时下发会话 cookie |

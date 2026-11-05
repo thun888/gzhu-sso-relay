@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -12,8 +13,11 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
+const configScript = "window.__RELAY_CONFIG__="
+
 // Handler 提供前端静态资源，未命中的路径回落到 index.html 以支持前端路由。
-func Handler() (http.Handler, error) {
+// inline 为页面返回配置 JSON，nil 表示不注入。
+func Handler(inline func(*http.Request) []byte) (http.Handler, error) {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		return nil, fmt.Errorf("web: 定位前端产物: %w", err)
@@ -42,8 +46,35 @@ func Handler() (http.Handler, error) {
 			}
 		}
 
+		page := index
+		if inline != nil {
+			if payload := inline(r); len(payload) > 0 {
+				page = injectConfig(index, payload)
+			}
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(index)
+		w.Header().Set("Cache-Control", "private, no-cache")
+		_, _ = w.Write(page)
 	}), nil
+}
+
+// injectConfig 把配置写成内联脚本插到 head 结束前，页面首帧即可直接读取。
+func injectConfig(index, payload []byte) []byte {
+	script := make([]byte, 0, len(payload)+len(configScript)+len("</script>")+len("<script>"))
+	script = append(script, "<script>"...)
+	script = append(script, configScript...)
+	script = append(script, payload...)
+	script = append(script, "</script>"...)
+
+	if pos := bytes.Index(index, []byte("</head>")); pos >= 0 {
+		out := make([]byte, 0, len(index)+len(script))
+		out = append(out, index[:pos]...)
+		out = append(out, script...)
+		return append(out, index[pos:]...)
+	}
+
+	out := make([]byte, 0, len(index)+len(script))
+	out = append(out, index...)
+	return append(out, script...)
 }
