@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Link2, Loader2, PenLine, ShieldCheck } from "lucide-react"
+import { ChevronRight, Link2, Loader2, PenLine, ShieldCheck } from "lucide-react"
 
 import { PageShell } from "@/components/page-shell"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,8 @@ import {
   passkeySupported,
 } from "@/lib/passkey"
 
+type GroupBrief = { id: number; name: string; code: string; is_upstream: boolean }
+
 type Me = {
   id: string
   name: string
@@ -21,8 +23,8 @@ type Me = {
   type: number
   mail_enabled?: boolean
   belong_class: string
-  groups: { id: number; name: string; code: string }[]
-  led_groups: { id: number; name: string; code: string }[]
+  groups: GroupBrief[]
+  led_groups: GroupBrief[]
   bindings: { provider: string; display_name: string; bound: boolean; account?: string }[]
 }
 
@@ -84,6 +86,7 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
   const [deviceBusy, setDeviceBusy] = useState(false)
   const [deviceMsg, setDeviceMsg] = useState("")
   const [confirmId, setConfirmId] = useState("")
+  const [upstreamOpen, setUpstreamOpen] = useState(false)
 
   const passkeyEnabled = passkey && passkeySupported()
 
@@ -274,6 +277,18 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
       </PageShell>
     )
   }
+
+  const localGroups = me.groups.filter((group) => !group.is_upstream)
+  const upstreamGroups = me.groups.filter((group) => group.is_upstream)
+
+  const groupChip = (group: GroupBrief) => (
+    <span
+      key={group.id}
+      className="rounded-md bg-secondary px-2 py-1 text-[12px] text-secondary-foreground"
+    >
+      {group.name}
+    </span>
+  )
 
   return (
     <PageShell>
@@ -535,16 +550,31 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
         {me.groups.length > 0 && (
           <div className="mt-6">
             <div className="text-[12px] text-muted-foreground">用户组</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {me.groups.map((group) => (
-                <span
-                  key={group.id}
-                  className="rounded-md bg-secondary px-2 py-1 text-[12px] text-secondary-foreground"
+
+            {localGroups.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">{localGroups.map(groupChip)}</div>
+            )}
+
+            {upstreamGroups.length > 0 && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  aria-expanded={upstreamOpen}
+                  onClick={() => setUpstreamOpen((open) => !open)}
+                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  {group.name}
-                </span>
-              ))}
-            </div>
+                  <ChevronRight
+                    className={cn("size-3.5 transition-transform", upstreamOpen && "rotate-90")}
+                    strokeWidth={2.25}
+                  />
+                  上游用户组 {upstreamGroups.length}
+                </button>
+
+                {upstreamOpen && (
+                  <div className="mt-1.5 flex flex-wrap gap-2">{upstreamGroups.map(groupChip)}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

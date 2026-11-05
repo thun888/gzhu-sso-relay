@@ -40,9 +40,10 @@ func NewAccount(users *repo.UserRepo, accounts *repo.AccountRepo, groups *repo.G
 }
 
 type groupBrief struct {
-	ID   uint64 `json:"id"`
-	Name string `json:"name"`
-	Code string `json:"code"`
+	ID         uint64 `json:"id"`
+	Name       string `json:"name"`
+	Code       string `json:"code"`
+	IsUpstream bool   `json:"is_upstream"`
 }
 
 type bindingView struct {
@@ -68,7 +69,7 @@ func (h *Account) Me(c *gin.Context) {
 	}
 	briefs := make([]groupBrief, 0, len(groups))
 	for _, group := range groups {
-		briefs = append(briefs, groupBrief{ID: group.ID, Name: group.Name, Code: group.Code})
+		briefs = append(briefs, groupBrief{ID: group.ID, Name: group.Name, Code: group.Code, IsUpstream: group.IsUpstream})
 	}
 
 	led, err := h.groups.LedGroups(ctx, user.ID)
@@ -78,7 +79,7 @@ func (h *Account) Me(c *gin.Context) {
 	}
 	ledBriefs := make([]groupBrief, 0, len(led))
 	for _, group := range led {
-		ledBriefs = append(ledBriefs, groupBrief{ID: group.ID, Name: group.Name, Code: group.Code})
+		ledBriefs = append(ledBriefs, groupBrief{ID: group.ID, Name: group.Name, Code: group.Code, IsUpstream: group.IsUpstream})
 	}
 
 	stored, err := h.accounts.BindingsOf(ctx, user.ID)
