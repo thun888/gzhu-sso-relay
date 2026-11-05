@@ -22,6 +22,7 @@ type Me = {
   email: string
   type: number
   mail_enabled?: boolean
+  avatar?: string
   belong_class: string
   groups: GroupBrief[]
   led_groups: GroupBrief[]
@@ -87,6 +88,7 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
   const [deviceMsg, setDeviceMsg] = useState("")
   const [confirmId, setConfirmId] = useState("")
   const [upstreamOpen, setUpstreamOpen] = useState(false)
+  const [avatarFailed, setAvatarFailed] = useState(false)
 
   const passkeyEnabled = passkey && passkeySupported()
 
@@ -307,7 +309,17 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
             </h1>
             <p className="mt-1.5 text-[13px] text-muted-foreground">已登录统一身份认证</p>
           </div>
-          <ShieldCheck className="size-7 text-primary/70" strokeWidth={1.5} />
+          {me.avatar && !avatarFailed ? (
+            <img
+              src={me.avatar}
+              alt=""
+              referrerPolicy="no-referrer"
+              onError={() => setAvatarFailed(true)}
+              className="size-12 shrink-0 rounded-full border border-border bg-secondary object-cover"
+            />
+          ) : (
+            <ShieldCheck className="size-7 text-primary/70" strokeWidth={1.5} />
+          )}
         </div>
 
         {notice && (
