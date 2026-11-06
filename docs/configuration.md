@@ -141,6 +141,8 @@ avatar:
 
 用户邮箱为空时不产生该字段。镜像源只需与 gravatar 的 `/<hash>` 路径兼容，末尾斜杠可省略。
 
+启用后会把镜像源的源（`scheme://host`）自动加进响应头 `Content-Security-Policy` 的 `img-src`，用户中心才能加载外站头像；关闭时不放行。`base_url` 在进程启动时读取，修改后需重启 relay。
+
 `picture` claim 只随 `profile` scope 下发，出现在 `id_token` 与 userinfo 中；关闭后两处都不再返回头像，discovery 的 `claims_supported` 也去掉 `picture`。
 
 ## secret_key

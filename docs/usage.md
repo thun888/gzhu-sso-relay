@@ -439,5 +439,6 @@ CDN 上对 `/assets/` 放开缓存收益最大；页面与接口都需要回源�
 | 授权返回 `access_denied` | 用户不在应用限定的用户组内 |
 | 绑定回调 `bind_error=exchange` | 回调地址与平台登记值不一致，或授权码已过期 |
 | 验证码不显示 | 浏览器无法访问 `static.geetest.com`，或 `captcha.enabled` 为 false；也检查响应头 `Content-Security-Policy` 是否放行了极验域名。服务端要求验证时会立即唤起，组件仍在加载则就绪后自动弹出，失败提示显示在当前登录方式下 |
+| 用户中心头像不显示 | 检查 `avatar.enabled` 与 `avatar.base_url`；控制台若报 CSP 拦截 `img-src`，说明运行中的进程还是旧配置或旧版本，改完 `base_url` 需重启并确认响应头的 `img-src` 含该镜像域名；镜像源返回错误时页面回落到盾牌图标 |
 | 管理后台 403 | 当前账号不是管理员，用 `relayctl user promote` 提升 |
 | 下游校验令牌失败 | 检查 issuer 是否为最新 `base_url`，JWKS 是否指向本服务，签名密钥是否被更换 |
