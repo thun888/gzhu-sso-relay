@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
 	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/passkey"
@@ -119,7 +120,8 @@ func (h *Passkey) Login(c *gin.Context) {
 		return
 	}
 
-	result, err := h.auth.PasskeyLogin(ctx, userID)
+	meta := audit.Meta{IP: ip, UserAgent: c.Request.UserAgent(), Method: "passkey"}
+	result, err := h.auth.PasskeyLogin(ctx, userID, meta)
 	if err != nil {
 		status, message := authError(err)
 		log.Printf("通行密钥登录被拒 id=%s ip=%s: %v", userID, ip, err)

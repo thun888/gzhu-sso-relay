@@ -23,21 +23,23 @@ func (p *Provider) claimsSupported() []string {
 func (p *Provider) Discovery(c *gin.Context) {
 	c.Header("Cache-Control", "public, max-age=300")
 	c.JSON(http.StatusOK, gin.H{
-		"issuer":                                     p.Issuer,
-		"authorization_endpoint":                     p.Issuer + "/oidc/authorize",
-		"token_endpoint":                             p.Issuer + "/oidc/token",
-		"userinfo_endpoint":                          p.Issuer + "/oidc/userinfo",
-		"revocation_endpoint":                        p.Issuer + "/oidc/revoke",
-		"jwks_uri":                                   p.Issuer + "/oidc/jwks",
-		"response_types_supported":                   []string{"code"},
-		"grant_types_supported":                      []string{"authorization_code", "refresh_token"},
-		"subject_types_supported":                    []string{"public"},
-		"id_token_signing_alg_values_supported":      []string{"RS256"},
-		"scopes_supported":                           supportedScopes,
-		"claims_supported":                           p.claimsSupported(),
-		"token_endpoint_auth_methods_supported":      []string{"client_secret_basic", "client_secret_post", "none"},
-		"revocation_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
-		"code_challenge_methods_supported":           []string{"S256"},
+		"issuer":                                        p.Issuer,
+		"authorization_endpoint":                        p.Issuer + "/oidc/authorize",
+		"token_endpoint":                                p.Issuer + "/oidc/token",
+		"userinfo_endpoint":                             p.Issuer + "/oidc/userinfo",
+		"revocation_endpoint":                           p.Issuer + "/oidc/revoke",
+		"introspection_endpoint":                        p.Issuer + "/oidc/introspect",
+		"jwks_uri":                                      p.Issuer + "/oidc/jwks",
+		"response_types_supported":                      []string{"code"},
+		"grant_types_supported":                         []string{"authorization_code", "refresh_token"},
+		"subject_types_supported":                       []string{"public"},
+		"id_token_signing_alg_values_supported":         []string{"RS256"},
+		"scopes_supported":                              supportedScopes,
+		"claims_supported":                              p.claimsSupported(),
+		"token_endpoint_auth_methods_supported":         []string{"client_secret_basic", "client_secret_post", "none"},
+		"revocation_endpoint_auth_methods_supported":    []string{"client_secret_basic", "client_secret_post", "none"},
+		"introspection_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
+		"code_challenge_methods_supported":              []string{"S256"},
 	})
 }
 

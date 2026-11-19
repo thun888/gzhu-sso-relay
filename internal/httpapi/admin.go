@@ -18,10 +18,11 @@ type Admin struct {
 	groups   *repo.GroupRepo
 	sessions *session.Manager
 	refresh  *oidc.RefreshStore
+	consents *repo.ConsentRepo
 }
 
-func NewAdmin(users *repo.UserRepo, groups *repo.GroupRepo, sessions *session.Manager, refresh *oidc.RefreshStore) *Admin {
-	return &Admin{users: users, groups: groups, sessions: sessions, refresh: refresh}
+func NewAdmin(users *repo.UserRepo, groups *repo.GroupRepo, sessions *session.Manager, refresh *oidc.RefreshStore, consents *repo.ConsentRepo) *Admin {
+	return &Admin{users: users, groups: groups, sessions: sessions, refresh: refresh, consents: consents}
 }
 
 type adminUserView struct {
@@ -177,6 +178,10 @@ func (h *Admin) PatchUser(c *gin.Context) {
 		}
 		if _, err := h.refresh.RevokeUser(ctx, id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "账号已禁用，但清理刷新令牌失败"})
+			return
+		}
+		if err := h.consents.BumpUser(ctx, id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "账号已禁用，但清理授权版本失败"})
 			return
 		}
 	}

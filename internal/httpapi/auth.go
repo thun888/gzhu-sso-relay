@@ -13,16 +13,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
 	"github.com/thun888/gzhu-sso-relay/internal/captcha"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
-	"github.com/thun888/gzhu-sso-relay/internal/upstream"
 )
 
 const (
 	sessionCookie = session.CookieName
 	ctxUserKey    = "relay.user"
+	ctxSessionKey = "relay.session"
 	// qrBindCookie 把二维码绑定到发起它的浏览器，确认结果只发给持有该 cookie 的一方。
 	qrBindCookie    = "relay_qr_bind"
 	qrBindCookieTTL = 5 * time.Minute
@@ -66,7 +67,7 @@ func (h *Auth) Login(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	ip := c.ClientIP()
-	userAgent := upstream.RequestUserAgentWithIP(c.Request.UserAgent(), ip)
+	meta := audit.Meta{IP: ip, UserAgent: c.Request.UserAgent(), Method: "password"}
 	guard := h.captcha.Required(ctx, ip)
 
 	if guard {
@@ -78,7 +79,7 @@ func (h *Auth) Login(c *gin.Context) {
 		}
 	}
 
-	result, err := h.service.Login(ctx, req.Username, req.Password, userAgent)
+	result, err := h.service.Login(ctx, req.Username, req.Password, meta)
 	if err != nil {
 		log.Printf("登录失败 id=%s ip=%s: %v", req.Username, ip, err)
 		if errors.Is(err, auth.ErrInvalidCredentials) {
@@ -135,8 +136,8 @@ func (h *Auth) StartQRLogin(c *gin.Context) {
 		return
 	}
 
-	userAgent := upstream.RequestUserAgentWithIP(c.Request.UserAgent(), ip)
-	challenge, err := h.service.StartQRLogin(ctx, ip, userAgent, sha256Hex(secret))
+	meta := audit.Meta{IP: ip, UserAgent: c.Request.UserAgent(), Method: "qr"}
+	challenge, err := h.service.StartQRLogin(ctx, meta, sha256Hex(secret))
 	if err != nil {
 		if errors.Is(err, auth.ErrTooManyAttempts) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "获取二维码过于频繁，请稍后再试"})
@@ -174,7 +175,8 @@ func (h *Auth) PollQRLogin(c *gin.Context) {
 		bindHash = sha256Hex(secret)
 	}
 
-	result, err := h.service.PollQRLogin(c.Request.Context(), c.Param("id"), bindHash)
+	meta := audit.Meta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Method: "qr"}
+	result, err := h.service.PollQRLogin(c.Request.Context(), c.Param("id"), bindHash, meta)
 	if err != nil {
 		status, message := qrError(err)
 		if status != http.StatusGone {
@@ -198,7 +200,8 @@ func (h *Auth) Logout(c *gin.Context) {
 		token = bearerToken(c)
 	}
 	if token != "" {
-		if err := h.service.Logout(c.Request.Context(), token); err != nil {
+		meta := audit.Meta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Method: "session"}
+		if err := h.service.Logout(c.Request.Context(), token, meta); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "退出失败"})
 			return
 		}
@@ -209,19 +212,20 @@ func (h *Auth) Logout(c *gin.Context) {
 
 func (h *Auth) RequireUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user, err := h.resolve(c)
+		value, user, err := h.resolve(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 			return
 		}
 		c.Set(ctxUserKey, user)
+		c.Set(ctxSessionKey, value)
 		c.Next()
 	}
 }
 
 func (h *Auth) RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user, err := h.resolve(c)
+		value, user, err := h.resolve(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 			return
@@ -231,16 +235,26 @@ func (h *Auth) RequireAdmin() gin.HandlerFunc {
 			return
 		}
 		c.Set(ctxUserKey, user)
+		c.Set(ctxSessionKey, value)
 		c.Next()
 	}
 }
 
-func (h *Auth) resolve(c *gin.Context) (*model.User, error) {
+func (h *Auth) resolve(c *gin.Context) (*session.Session, *model.User, error) {
 	token, _ := c.Cookie(sessionCookie)
 	if token == "" {
 		token = bearerToken(c)
 	}
-	return h.service.Resolve(c.Request.Context(), token)
+	return h.service.ResolveSession(c.Request.Context(), token)
+}
+
+func currentSession(c *gin.Context) (*session.Session, bool) {
+	value, ok := c.Get(ctxSessionKey)
+	if !ok {
+		return nil, false
+	}
+	session, ok := value.(*session.Session)
+	return session, ok
 }
 
 func toUserView(u *model.User) userView {

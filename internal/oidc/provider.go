@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/avatar"
 	"github.com/thun888/gzhu-sso-relay/internal/notify"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
@@ -41,6 +42,7 @@ type Provider struct {
 	notifier *notify.Notifier
 	limiter  *TokenLimiter
 	avatars  *avatar.Resolver
+	recorder *audit.Recorder
 }
 
 type Options struct {
@@ -63,6 +65,7 @@ type Options struct {
 	Notifier   *notify.Notifier
 	Limiter    *TokenLimiter
 	Avatars    *avatar.Resolver
+	Audit      *audit.Recorder
 }
 
 func New(opts Options) *Provider {
@@ -86,6 +89,7 @@ func New(opts Options) *Provider {
 		notifier:   opts.Notifier,
 		limiter:    opts.Limiter,
 		avatars:    opts.Avatars,
+		recorder:   opts.Audit,
 	}
 }
 
@@ -170,11 +174,11 @@ func (p *Provider) currentUser(c *gin.Context) (*model.User, error) {
 		}
 	}
 
-	userID, err := p.sessions.Resolve(c.Request.Context(), token)
+	value, err := p.sessions.Resolve(c.Request.Context(), token)
 	if err != nil {
 		return nil, err
 	}
-	user, err := p.users.ByID(c.Request.Context(), userID)
+	user, err := p.users.ByID(c.Request.Context(), value.UserID)
 	if err != nil {
 		return nil, err
 	}

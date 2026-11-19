@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/oidc"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
@@ -17,10 +18,11 @@ type Consent struct {
 	consents *repo.ConsentRepo
 	clients  *repo.ClientRepo
 	scopes   *repo.ScopeRepo
+	audit    *audit.Recorder
 }
 
-func NewConsent(pending *oidc.PendingStore, consents *repo.ConsentRepo, clients *repo.ClientRepo, scopes *repo.ScopeRepo) *Consent {
-	return &Consent{pending: pending, consents: consents, clients: clients, scopes: scopes}
+func NewConsent(pending *oidc.PendingStore, consents *repo.ConsentRepo, clients *repo.ClientRepo, scopes *repo.ScopeRepo, recorder *audit.Recorder) *Consent {
+	return &Consent{pending: pending, consents: consents, clients: clients, scopes: scopes, audit: recorder}
 }
 
 type scopeView struct {
@@ -113,6 +115,19 @@ func (h *Consent) Approve(c *gin.Context) {
 	}
 	_ = h.pending.Delete(ctx, req.Req)
 
+	clientName := ""
+	if client, err := h.clients.ByClientID(ctx, pending.ClientID); err == nil {
+		clientName = client.Name
+	}
+	h.audit.Record(ctx, audit.Meta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Method: "consent"}, model.AuthEvent{
+		Kind:       audit.KindConsentGrant,
+		UserID:     user.ID,
+		ClientID:   pending.ClientID,
+		ClientName: clientName,
+		Result:     audit.ResultSuccess,
+		Scopes:     pending.Scopes,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"continue": pending.AuthorizeURL})
 }
 
@@ -149,6 +164,20 @@ func (h *Consent) Deny(c *gin.Context) {
 		return
 	}
 	_ = h.pending.Delete(ctx, req.Req)
+
+	clientName := ""
+	if client, err := h.clients.ByClientID(ctx, pending.ClientID); err == nil {
+		clientName = client.Name
+	}
+	h.audit.Record(ctx, audit.Meta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent(), Method: "consent"}, model.AuthEvent{
+		Kind:       audit.KindAuthorizeDeny,
+		UserID:     user.ID,
+		ClientID:   pending.ClientID,
+		ClientName: clientName,
+		Result:     audit.ResultDenied,
+		Reason:     "user_denied",
+		Scopes:     pending.Scopes,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"continue": target})
 }

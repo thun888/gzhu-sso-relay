@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
 
@@ -62,6 +63,15 @@ func (p *Provider) Authorize(c *gin.Context) {
 		return
 	}
 	if !permitted {
+		p.record(c, model.AuthEvent{
+			Kind:       audit.KindAuthorizeDeny,
+			UserID:     user.ID,
+			ClientID:   client.ClientID,
+			ClientName: client.Name,
+			Result:     audit.ResultDenied,
+			Reason:     "no_access",
+			Scopes:     scopes,
+		})
 		redirectError(c, redirectURI, state, "access_denied", "当前账号无权访问该应用")
 		return
 	}
@@ -73,6 +83,15 @@ func (p *Provider) Authorize(c *gin.Context) {
 			return
 		}
 		if !permitted {
+			p.record(c, model.AuthEvent{
+				Kind:       audit.KindAuthorizeDeny,
+				UserID:     user.ID,
+				ClientID:   client.ClientID,
+				ClientName: client.Name,
+				Result:     audit.ResultDenied,
+				Reason:     "binding_denied",
+				Scopes:     scopes,
+			})
 			redirectError(c, redirectURI, state, "access_denied", "该应用要求绑定 "+required+"，但当前账号无权使用该绑定源")
 			return
 		}
@@ -121,19 +140,39 @@ func (p *Provider) Authorize(c *gin.Context) {
 		return
 	}
 
+	version, active, err := p.consents.ActiveVersion(ctx, user.ID, client.ClientID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	if !active {
+		redirectError(c, redirectURI, state, "access_denied", "授权状态已失效，请重新授权")
+		return
+	}
+
 	code, err := p.codes.Issue(ctx, Grant{
-		UserID:        user.ID,
-		ClientID:      client.ClientID,
-		RedirectURI:   redirectURI,
-		Scopes:        scopes,
-		Nonce:         query.Get("nonce"),
-		CodeChallenge: challenge,
-		AuthTime:      nowUnix(),
+		UserID:         user.ID,
+		ClientID:       client.ClientID,
+		RedirectURI:    redirectURI,
+		Scopes:         scopes,
+		Nonce:          query.Get("nonce"),
+		CodeChallenge:  challenge,
+		AuthTime:       nowUnix(),
+		ConsentVersion: version,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
+
+	p.record(c, model.AuthEvent{
+		Kind:       audit.KindAuthorizeAllow,
+		UserID:     user.ID,
+		ClientID:   client.ClientID,
+		ClientName: client.Name,
+		Result:     audit.ResultSuccess,
+		Scopes:     scopes,
+	})
 
 	if p.notifier != nil {
 		p.notifier.FirstLogin(user, client)
@@ -217,4 +256,12 @@ func redirectError(c *gin.Context, redirectURI, state, code, description string)
 		return
 	}
 	c.Redirect(http.StatusFound, target)
+}
+
+func (p *Provider) record(c *gin.Context, event model.AuthEvent) {
+	p.recorder.Record(c.Request.Context(), audit.Meta{
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+		Method:    "oidc",
+	}, event)
 }

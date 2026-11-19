@@ -14,8 +14,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
+	"github.com/thun888/gzhu-sso-relay/internal/upstream"
 	"github.com/thun888/gzhu-sso-relay/internal/upstream/cas"
 	"github.com/thun888/gzhu-sso-relay/internal/upstream/portal"
 )
@@ -53,11 +55,12 @@ type QRSession struct {
 	UUID      string `json:"uuid"`
 	UserAgent string `json:"user_agent"`
 	// BindHash 是发起浏览器绑定 cookie 的 SHA-256，轮询必须持同一份 cookie 才认。
-	BindHash string         `json:"bind_hash"`
-	Cookies  []*http.Cookie `json:"cookies"`
-	LastPoll int64          `json:"last_poll"`
-	UserID   string         `json:"user_id"`
-	Token    string         `json:"token"`
+	BindHash  string         `json:"bind_hash"`
+	Cookies   []*http.Cookie `json:"cookies"`
+	LastPoll  int64          `json:"last_poll"`
+	UserID    string         `json:"user_id"`
+	Token     string         `json:"token"`
+	SessionID string         `json:"session_id"`
 }
 
 type QRStore struct {
@@ -144,8 +147,8 @@ type QRChallenge struct {
 	ExpiresIn time.Duration
 }
 
-func (s *Service) StartQRLogin(ctx context.Context, ip, userAgent, bindHash string) (*QRChallenge, error) {
-	ok, err := s.qr.allowStart(ctx, ip)
+func (s *Service) StartQRLogin(ctx context.Context, meta audit.Meta, bindHash string) (*QRChallenge, error) {
+	ok, err := s.qr.allowStart(ctx, meta.IP)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +157,11 @@ func (s *Service) StartQRLogin(ctx context.Context, ip, userAgent, bindHash stri
 	}
 
 	id := uuid.NewString()
-	session := QRSession{UUID: id, UserAgent: userAgent, BindHash: bindHash}
+	session := QRSession{
+		UUID:      id,
+		UserAgent: upstream.RequestUserAgentWithIP(meta.UserAgent, meta.IP),
+		BindHash:  bindHash,
+	}
 	if err := s.qr.save(ctx, id, session, QRTTL); err != nil {
 		return nil, err
 	}
@@ -167,7 +174,19 @@ func (s *Service) StartQRLogin(ctx context.Context, ip, userAgent, bindHash stri
 
 // PollQRLogin 查询一次扫码状态，返回 nil 表示仍在等待扫码。
 // bindHash 是轮询请求携带的绑定 cookie 哈希，与发起时不一致直接拒绝。
-func (s *Service) PollQRLogin(ctx context.Context, id, bindHash string) (*Result, error) {
+func (s *Service) PollQRLogin(ctx context.Context, id, bindHash string, meta audit.Meta) (result *Result, err error) {
+	defer func() {
+		if err == nil || !qrFailureRecordable(err) {
+			return
+		}
+		s.audit.Record(ctx, meta, model.AuthEvent{
+			Kind:   audit.KindLoginFailure,
+			UserID: "",
+			Result: audit.ResultFailure,
+			Reason: failureReason(err),
+		})
+	}()
+
 	session, err := s.qr.load(ctx, id)
 	if err != nil {
 		return nil, err
@@ -182,7 +201,7 @@ func (s *Service) PollQRLogin(ctx context.Context, id, bindHash string) (*Result
 		if err != nil {
 			return nil, ErrQRSessionInvalid
 		}
-		return &Result{User: user, Token: session.Token}, nil
+		return &Result{User: user, Token: session.Token, SessionID: session.SessionID}, nil
 	}
 
 	release, locked, err := s.qr.lock(ctx, id, s.upstream.Timeout+qrLockSlack)
@@ -219,7 +238,7 @@ func (s *Service) PollQRLogin(ctx context.Context, id, bindHash string) (*Result
 		return nil, nil
 	}
 
-	result, err := s.confirmQR(ctx, &session, hc, redirect)
+	result, err = s.confirmQR(ctx, &session, hc, redirect, meta)
 	if err != nil {
 		_ = s.qr.delete(ctx, id)
 		return nil, err
@@ -229,13 +248,14 @@ func (s *Service) PollQRLogin(ctx context.Context, id, bindHash string) (*Result
 	session.Cookies = nil
 	session.UserID = result.User.ID
 	session.Token = result.Token
+	session.SessionID = result.SessionID
 	if err := s.qr.save(ctx, id, session, qrConfirmedTTL); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (s *Service) confirmQR(ctx context.Context, session *QRSession, hc *http.Client, redirect string) (*Result, error) {
+func (s *Service) confirmQR(ctx context.Context, session *QRSession, hc *http.Client, redirect string, meta audit.Meta) (*Result, error) {
 	// redirect 里带着上游票据，跟进一次才能把扫码建立的会话换成门户自己的 cookie。
 	if err := followRedirect(ctx, hc, redirect); err != nil {
 		log.Printf("扫码登录：跟进上游跳转失败 uuid=%s: %v", session.UUID, err)
@@ -257,7 +277,22 @@ func (s *Service) confirmQR(ctx context.Context, session *QRSession, hc *http.Cl
 	if err != nil {
 		return nil, err
 	}
-	return s.issue(ctx, user)
+	return s.issue(ctx, user, meta)
+}
+
+// qrFailureRecordable 过滤轮询噪声，只记录身份被拒绝或上游不可用这类值得追溯的失败。
+func qrFailureRecordable(err error) bool {
+	switch {
+	case errors.Is(err, ErrQRUnlinked),
+		errors.Is(err, ErrAccountDisabled),
+		errors.Is(err, ErrNoEmailDomain),
+		errors.Is(err, ErrUpstreamUnavailable),
+		errors.Is(err, ErrUpstreamChallenge),
+		errors.Is(err, ErrUpstreamLocked):
+		return true
+	default:
+		return false
+	}
 }
 
 // qrUser 先按门户返回的手机号找已绑定账号。门户不含学号，首次扫码还要向上游反查，

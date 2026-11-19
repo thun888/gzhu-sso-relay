@@ -22,10 +22,11 @@ const (
 var ErrRefreshInvalid = errors.New("oidc: 刷新令牌无效或已使用")
 
 type RefreshGrant struct {
-	UserID   string   `json:"user_id"`
-	ClientID string   `json:"client_id"`
-	Scopes   []string `json:"scopes"`
-	AuthTime int64    `json:"auth_time"`
+	UserID         string   `json:"user_id"`
+	ClientID       string   `json:"client_id"`
+	Scopes         []string `json:"scopes"`
+	AuthTime       int64    `json:"auth_time"`
+	ConsentVersion int64    `json:"consent_version"`
 }
 
 type RefreshStore struct {
@@ -124,6 +125,50 @@ func (s *RefreshStore) Revoke(ctx context.Context, token string) (bool, error) {
 		_ = s.rdb.SRem(ctx, refreshUserPrefix+grant.UserID, token)
 	}
 	return n > 0, nil
+}
+
+// RevokeUserClient 清掉该用户对某个应用的全部刷新令牌，返回作废数量。
+func (s *RefreshStore) RevokeUserClient(ctx context.Context, userID, clientID string) (int, error) {
+	key := refreshUserPrefix + userID
+	tokens, err := s.rdb.SMembers(ctx, key).Result()
+	if err != nil {
+		return 0, fmt.Errorf("oidc: 读取用户刷新令牌集合: %w", err)
+	}
+	if len(tokens) == 0 {
+		return 0, nil
+	}
+
+	keys := make([]string, len(tokens))
+	for i, token := range tokens {
+		keys[i] = refreshPrefix + token
+	}
+	values, err := s.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return 0, fmt.Errorf("oidc: 批量读取刷新令牌: %w", err)
+	}
+
+	var matched []string
+	for i, value := range values {
+		raw, ok := value.(string)
+		if !ok {
+			continue
+		}
+		var grant RefreshGrant
+		if json.Unmarshal([]byte(raw), &grant) != nil || grant.ClientID != clientID {
+			continue
+		}
+		matched = append(matched, tokens[i])
+	}
+
+	pipe := s.rdb.TxPipeline()
+	for _, token := range matched {
+		pipe.Del(ctx, refreshPrefix+token)
+		pipe.SRem(ctx, key, token)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, fmt.Errorf("oidc: 撤销应用的刷新令牌: %w", err)
+	}
+	return len(matched), nil
 }
 
 // RevokeUser 清空该用户全部刷新令牌，返回作废数量。

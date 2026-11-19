@@ -20,17 +20,19 @@ type AccountDeletion struct {
 	users         *repo.UserRepo
 	sessions      *session.Manager
 	refresh       *oidc.RefreshStore
+	events        *repo.EventRepo
 	confirmations *Confirmation
 	loginURL      string
 	site          string
 	secure        bool
 }
 
-func NewAccountDeletion(users *repo.UserRepo, sessions *session.Manager, refresh *oidc.RefreshStore, confirmations *Confirmation, loginURL, site string, secure bool) *AccountDeletion {
+func NewAccountDeletion(users *repo.UserRepo, sessions *session.Manager, refresh *oidc.RefreshStore, events *repo.EventRepo, confirmations *Confirmation, loginURL, site string, secure bool) *AccountDeletion {
 	return &AccountDeletion{
 		users:         users,
 		sessions:      sessions,
 		refresh:       refresh,
+		events:        events,
 		confirmations: confirmations,
 		loginURL:      loginURL,
 		site:          site,
@@ -46,7 +48,7 @@ func (h *AccountDeletion) Flow() ConfirmFlow {
 		SuccessKey: "account_deleted",
 		ErrorKey:   "account_delete_error",
 		Danger:     true,
-		Note:       "注销后账号、第三方绑定、用户组与应用授权记录将被永久删除，且无法恢复。",
+		Note:       "注销后账号、第三方绑定、用户组与应用授权记录将被永久删除，登录授权记录会去除账号标识后保留。",
 		Preview:    h.preview,
 		Apply:      h.apply,
 	}
@@ -97,6 +99,9 @@ func (h *AccountDeletion) apply(c *gin.Context, user *model.User, _ json.RawMess
 		log.Printf("注销账号失败 id=%s: %v", user.ID, err)
 		return "failed"
 	}
+	if err := h.events.AnonymizeUser(ctx, user.ID); err != nil {
+		log.Printf("注销账号时匿名化事件失败 id=%s: %v", user.ID, err)
+	}
 
 	setSessionCookie(c, "", -1, h.secure)
 	log.Printf("用户 %s（%s）已注销账号", user.ID, user.Email)
@@ -109,7 +114,7 @@ func (h *AccountDeletion) subject() string {
 
 func (h *AccountDeletion) body(user *model.User, link string, ttl time.Duration) string {
 	return fmt.Sprintf("%s（%s）你好：\n\n"+
-		"我们收到了注销%s账号的请求。确认后将永久删除本站保存的账号记录，包括密码、通行密钥、第三方账号绑定、用户组归属、应用授权记录与登录通知记录，所有已登录的会话和已签发的令牌同时失效，删除后无法恢复。\n\n"+
+		"我们收到了注销%s账号的请求。确认后将永久删除本站保存的账号记录，包括密码、通行密钥、第三方账号绑定、用户组归属、应用授权记录与登录通知记录；登录与授权记录会去除账号、IP 与设备信息后保留。所有已登录的会话和已签发的令牌同时失效，删除后无法恢复。\n\n"+
 		"请在 %d 分钟内打开以下链接，在确认页点击确认完成注销：\n%s\n\n"+
 		"如非本人操作，请忽略本邮件，账号不会有任何变化。\n\n%s",
 		user.Name, user.ID, siteName(h.site), int(ttl.Minutes()), link, siteName(h.site))

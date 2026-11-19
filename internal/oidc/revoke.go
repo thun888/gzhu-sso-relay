@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
+	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
 
 // Revoke 实现 RFC 7009。token 未知或不属于当前客户端时同样返回 200，
@@ -63,6 +66,14 @@ func (p *Provider) Revoke(c *gin.Context) {
 				tokenError(c, http.StatusInternalServerError, "server_error", "撤销失败")
 				return
 			}
+			p.record(c, model.AuthEvent{
+				Kind:       audit.KindAuthorizeRevoke,
+				UserID:     grant.UserID,
+				ClientID:   grant.ClientID,
+				ClientName: client.Name,
+				Result:     audit.ResultSuccess,
+				Reason:     "client",
+			})
 		}
 		c.Status(http.StatusOK)
 		return

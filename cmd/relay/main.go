@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/auth"
 	"github.com/thun888/gzhu-sso-relay/internal/avatar"
 	"github.com/thun888/gzhu-sso-relay/internal/binding"
@@ -85,6 +86,8 @@ func run() error {
 	clients := repo.NewClientRepo(db)
 	groups := repo.NewGroupRepo(db)
 	sessions := session.New(rdb)
+	eventRepo := repo.NewEventRepo(db)
+	recorder := audit.New(eventRepo)
 
 	authService := auth.NewService(auth.Options{
 		Users:    users,
@@ -101,6 +104,7 @@ func run() error {
 			QRService:     cfg.Upstream.QRService,
 		},
 		EmailDomains: cfg.Server.EmailDomains,
+		Audit:        recorder,
 	})
 	secure := strings.HasPrefix(cfg.Server.BaseURL, "https://")
 
@@ -134,6 +138,7 @@ func run() error {
 	consents := repo.NewConsentRepo(db)
 	scopeRepo := repo.NewScopeRepo(db)
 	pending := oidc.NewPendingStore(rdb)
+	refresh := oidc.NewRefreshStore(rdb)
 
 	sender := mail.NewSender(mail.Config{
 		Host:     cfg.SMTP.Host,
@@ -150,14 +155,16 @@ func run() error {
 	}
 
 	accountHandler := httpapi.NewAccount(users, accounts, groups, registry, bindingACLs, binding.NewStateStore(rdb), avatars, cfg.Server.BaseURL, sender.Enabled())
-	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo)
+	consentHandler := httpapi.NewConsent(pending, consents, clients, scopeRepo, recorder)
+	authorizationHandler := httpapi.NewAuthorizations(consents, clients, refresh, recorder)
+	sessionHandler := httpapi.NewSessions(sessions, recorder)
+	eventHandler := httpapi.NewEvents(eventRepo)
 
 	notifier := notify.New(sender, repo.NewNoticeRepo(db), cfg.Server.SiteTitle)
 
-	refresh := oidc.NewRefreshStore(rdb)
 	confirmations := httpapi.NewConfirmation(users, confirm.NewStore(rdb), sender, cfg.Server.BaseURL)
 	emailHandler := httpapi.NewEmailChange(users, cfg.Server.EmailDomains, confirmations, cfg.Server.AccountURL, cfg.Server.SiteTitle)
-	deletionHandler := httpapi.NewAccountDeletion(users, sessions, refresh, confirmations, cfg.Server.LoginURL, cfg.Server.SiteTitle, secure)
+	deletionHandler := httpapi.NewAccountDeletion(users, sessions, refresh, eventRepo, confirmations, cfg.Server.LoginURL, cfg.Server.SiteTitle, secure)
 	confirmations.Register(emailHandler.Flow(), deletionHandler.Flow())
 
 	provider := oidc.New(oidc.Options{
@@ -180,6 +187,7 @@ func run() error {
 		Notifier:   notifier,
 		Limiter:    oidc.NewTokenLimiter(rdb),
 		Avatars:    avatars,
+		Audit:      recorder,
 	})
 
 	router := gin.New()
@@ -198,6 +206,7 @@ func run() error {
 	router.GET("/oidc/authorize", provider.Authorize)
 	router.POST("/oidc/token", provider.Token)
 	router.POST("/oidc/revoke", provider.Revoke)
+	router.POST("/oidc/introspect", provider.Introspect)
 	router.GET("/oidc/userinfo", provider.UserInfo)
 	router.GET("/api/public/config", httpapi.PublicConfig(cfg.Server, captchaPolicy, passkeyService, cfg.Upstream.QRLogin))
 	router.POST("/api/login", authHandler.Login)
@@ -213,6 +222,9 @@ func run() error {
 		router.DELETE("/api/passkeys/:id", authHandler.RequireUser(), passkeyHandler.Delete)
 	}
 	router.GET("/api/me", authHandler.RequireUser(), accountHandler.Me)
+	router.GET("/api/me/sessions", authHandler.RequireUser(), sessionHandler.List)
+	router.DELETE("/api/me/sessions/:id", authHandler.RequireUser(), sessionHandler.Revoke)
+	router.GET("/api/me/events", authHandler.RequireUser(), eventHandler.Mine)
 	router.POST("/api/email/change", authHandler.RequireUser(), emailHandler.Request)
 	router.DELETE("/api/account", authHandler.RequireUser(), deletionHandler.Request)
 	router.GET("/api/confirm/:kind", confirmations.Preview)
@@ -220,11 +232,13 @@ func run() error {
 	router.GET("/api/consent", authHandler.RequireUser(), consentHandler.Show)
 	router.POST("/api/consent", authHandler.RequireUser(), consentHandler.Approve)
 	router.POST("/api/consent/deny", authHandler.RequireUser(), consentHandler.Deny)
+	router.GET("/api/me/authorizations", authHandler.RequireUser(), authorizationHandler.List)
+	router.DELETE("/api/me/authorizations/:client_id", authHandler.RequireUser(), authorizationHandler.Revoke)
 	router.GET("/api/bindings/:provider/start", authHandler.RequireUser(), accountHandler.StartBinding)
 	router.DELETE("/api/bindings/:provider", authHandler.RequireUser(), accountHandler.Unbind)
 	router.GET("/bindings/:provider/callback", accountHandler.Callback)
 
-	adminHandler := httpapi.NewAdmin(users, groups, sessions, refresh)
+	adminHandler := httpapi.NewAdmin(users, groups, sessions, refresh, consents)
 	leaderHandler := httpapi.NewLeader(groups, users)
 	adminClients := httpapi.NewAdminClients(clients, scopeRepo, groups, users, registry, logos)
 	adminBindings := httpapi.NewAdminBindings(registry, bindingACLs, groups, users)
@@ -241,6 +255,7 @@ func run() error {
 	admin.DELETE("/groups/:id/members/:user_id", adminHandler.RemoveGroupMember)
 	admin.PUT("/groups/:id/leaders", adminHandler.SetGroupLeaders)
 	admin.GET("/scopes", adminClients.Scopes)
+	admin.GET("/events", eventHandler.Admin)
 	admin.GET("/bindings", adminBindings.List)
 	admin.PUT("/bindings/:name", adminBindings.Update)
 	admin.GET("/clients", adminClients.List)

@@ -48,6 +48,16 @@ func (p *Provider) UserInfo(c *gin.Context) {
 		return
 	}
 
+	version := int64(1)
+	if value, ok := claims["ver"].(float64); ok {
+		version = int64(value)
+	}
+	current, active, err := p.consents.ActiveVersion(c.Request.Context(), sub, client.ClientID)
+	if err != nil || !active || current != version {
+		unauthorized(c)
+		return
+	}
+
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, p.claimsFor(c.Request.Context(), user, splitScope(scope)))
 }

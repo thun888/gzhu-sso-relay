@@ -17,6 +17,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 )
@@ -116,7 +117,17 @@ func (p *Provider) exchangeCode(c *gin.Context, client *model.OAuthClient, form 
 		return
 	}
 
-	p.issueTokens(c, client, user, grant.Scopes, grant.AuthTime, grant.Nonce)
+	version, active, err := p.consents.ActiveVersion(ctx, user.ID, client.ClientID)
+	if err != nil {
+		tokenError(c, http.StatusInternalServerError, "server_error", "授权状态不可用")
+		return
+	}
+	if !active || version != consentVersion(grant.ConsentVersion) {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "授权已撤销，请重新授权")
+		return
+	}
+
+	p.issueTokens(c, client, user, grant.Scopes, grant.AuthTime, grant.Nonce, version, true)
 }
 
 func (p *Provider) exchangeRefresh(c *gin.Context, client *model.OAuthClient, form url.Values) {
@@ -170,6 +181,16 @@ func (p *Provider) exchangeRefresh(c *gin.Context, client *model.OAuthClient, fo
 		return
 	}
 
+	version, active, err := p.consents.ActiveVersion(ctx, user.ID, client.ClientID)
+	if err != nil {
+		tokenError(c, http.StatusInternalServerError, "server_error", "授权状态不可用")
+		return
+	}
+	if !active || version != consentVersion(grant.ConsentVersion) {
+		tokenError(c, http.StatusBadRequest, "invalid_grant", "授权已撤销，请重新授权")
+		return
+	}
+
 	previous, err := p.refresh.Consume(ctx, raw)
 	if err != nil {
 		if errors.Is(err, ErrRefreshInvalid) {
@@ -180,21 +201,22 @@ func (p *Provider) exchangeRefresh(c *gin.Context, client *model.OAuthClient, fo
 		return
 	}
 
-	p.issueTokens(c, client, user, scopes, previous.AuthTime, "")
+	p.issueTokens(c, client, user, scopes, previous.AuthTime, "", version, false)
 }
 
 // issueTokens 同时签发访问令牌、ID 令牌与刷新令牌，刷新令牌每次轮转。
 // 刷新路径不回传 nonce，OIDC Core 12.2 要求重新签发的 ID 令牌不带 nonce。
-func (p *Provider) issueTokens(c *gin.Context, client *model.OAuthClient, user *model.User, scopes []string, authTime int64, nonce string) {
+func (p *Provider) issueTokens(c *gin.Context, client *model.OAuthClient, user *model.User, scopes []string, authTime int64, nonce string, consentVersion int64, fresh bool) {
 	ctx := c.Request.Context()
 	now := time.Now()
 	audience := []string{client.ClientID}
 
 	refreshToken, err := p.refresh.Issue(ctx, RefreshGrant{
-		UserID:   user.ID,
-		ClientID: client.ClientID,
-		Scopes:   scopes,
-		AuthTime: authTime,
+		UserID:         user.ID,
+		ClientID:       client.ClientID,
+		Scopes:         scopes,
+		AuthTime:       authTime,
+		ConsentVersion: consentVersion,
 	})
 	if err != nil {
 		tokenError(c, http.StatusInternalServerError, "server_error", "签发刷新令牌失败")
@@ -209,6 +231,7 @@ func (p *Provider) issueTokens(c *gin.Context, client *model.OAuthClient, user *
 		"exp":       now.Add(accessTokenTTL).Unix(),
 		"scope":     strings.Join(scopes, " "),
 		"token_use": "access",
+		"ver":       consentVersion,
 	})
 	if err != nil {
 		tokenError(c, http.StatusInternalServerError, "server_error", "签发访问令牌失败")
@@ -233,6 +256,20 @@ func (p *Provider) issueTokens(c *gin.Context, client *model.OAuthClient, user *
 	if err != nil {
 		tokenError(c, http.StatusInternalServerError, "server_error", "签发 ID 令牌失败")
 		return
+	}
+
+	if err := p.consents.TouchUsed(ctx, user.ID, client.ClientID, now); err != nil {
+		log.Printf("oidc: 更新授权使用时间: %v", err)
+	}
+	if fresh {
+		p.record(c, model.AuthEvent{
+			Kind:       audit.KindAppLogin,
+			UserID:     user.ID,
+			ClientID:   client.ClientID,
+			ClientName: client.Name,
+			Result:     audit.ResultSuccess,
+			Scopes:     scopes,
+		})
 	}
 
 	c.Header("Cache-Control", "no-store")
@@ -308,4 +345,12 @@ func (p *Provider) countFailure(ctx context.Context, c *gin.Context) {
 
 func nowUnix() int64 {
 	return time.Now().Unix()
+}
+
+// consentVersion 把升级前签发、还没带版本号的令牌视为第一版。
+func consentVersion(version int64) int64 {
+	if version <= 0 {
+		return 1
+	}
+	return version
 }

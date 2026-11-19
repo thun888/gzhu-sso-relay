@@ -37,6 +37,7 @@ relay 对外提供标准 OIDC 授权码流程。应用只需要 discovery 地址
 | 授权 | `<issuer>/oidc/authorize` |
 | 令牌 | `<issuer>/oidc/token` |
 | 撤销 | `<issuer>/oidc/revoke` |
+| 校验 | `<issuer>/oidc/introspect` |
 | 用户信息 | `<issuer>/oidc/userinfo` |
 | JWKS | `<issuer>/oidc/jwks` |
 
@@ -52,6 +53,7 @@ discovery 声明的能力：
 | `claims_supported` | `sub`、`name`、`preferred_username`、`email`、`email_verified`、`belong_class`、`groups`、`group_roles`；开启头像时多一个 `picture` |
 | `token_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `revocation_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
+| `introspection_endpoint_auth_methods_supported` | `client_secret_basic`、`client_secret_post`、`none` |
 | `code_challenge_methods_supported` | `S256` |
 
 ## 授权码流程
@@ -207,7 +209,34 @@ token_type_hint=<access_token 或 refresh_token，可选>
 
 只要客户端凭据有效，即使 token 不存在或不属于该客户端也返回 `200`，这是 RFC 7009 的要求，避免端点被用来探测令牌有效性。
 
-撤销只对 relay 自身生效。下游如果离线验签自行解析 JWT，在过期前仍会接受这个 token，需要即时失效时请调用 userinfo。
+用户在账号页撤销某个应用的授权后，consent 版本号递增，该应用已签发的 access token 在 relay 的 userinfo 与 introspect 上立即失效，refresh token 同时删除。下游如果离线验签自行解析 JWT，在过期前仍会接受这个 token；需要即时失效的应用应调用 userinfo 或 introspect，而不是只做本地验签。
+
+### 6. 校验令牌
+
+```http
+POST <issuer>/oidc/introspect
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+token=<access_token>
+```
+
+```json
+{
+  "active": true,
+  "scope": "openid profile",
+  "client_id": "<client_id>",
+  "sub": "20240001",
+  "token_type": "Bearer",
+  "iss": "<issuer>",
+  "exp": 1730000000,
+  "iat": 1729996400,
+  "username": "20240001",
+  "name": "张三"
+}
+```
+
+无效、过期、已撤销或不属于该客户端的令牌统一返回 `200` 与 `{"active": false}`。
 
 ## scope 与 claims
 

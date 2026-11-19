@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -54,6 +55,8 @@ func main() {
 		promoteUser(ctx, db, args[2:])
 	case "user import":
 		importUsers(ctx, db, cfg, args[2:])
+	case "audit prune":
+		pruneEvents(ctx, db, args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -384,6 +387,32 @@ func splitList(raw string) []string {
 	return out
 }
 
+func pruneEvents(ctx context.Context, db *gorm.DB, args []string) {
+	fs := flag.NewFlagSet("audit prune", flag.ExitOnError)
+	days := fs.Int("days", 180, "保留天数")
+	dryRun := fs.Bool("dry-run", false, "只统计不删除")
+	_ = fs.Parse(args)
+	if *days <= 0 {
+		die(fmt.Errorf("-days 必须大于 0"))
+	}
+
+	before := time.Now().AddDate(0, 0, -*days)
+	if *dryRun {
+		var count int64
+		if err := db.WithContext(ctx).Model(&model.AuthEvent{}).Where("occurred_at < ?", before).Count(&count).Error; err != nil {
+			die(err)
+		}
+		fmt.Printf("将删除 %d 条 %s 之前的事件\n", count, before.Format("2006-01-02"))
+		return
+	}
+
+	result := db.WithContext(ctx).Where("occurred_at < ?", before).Delete(&model.AuthEvent{})
+	if result.Error != nil {
+		die(result.Error)
+	}
+	fmt.Printf("已删除 %d 条 %s 之前的事件\n", result.RowsAffected, before.Format("2006-01-02"))
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, `relayctl 管理命令
 
@@ -394,6 +423,7 @@ func usage() {
   relayctl client delete -id <client_id>
   relayctl user promote -id <学号> [-revoke]
   relayctl user import <文件|-> [-group <组code>]
+  relayctl audit prune [-days 180] [-dry-run]
 
     每行一个学号，可带姓名：20240001,张三。# 开头的行跳过。
     预导入的用户本地密码不可用，首次登录走上游认证并补全资料。

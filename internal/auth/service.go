@@ -11,11 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thun888/gzhu-sso-relay/internal/audit"
 	"github.com/thun888/gzhu-sso-relay/internal/config"
 	"github.com/thun888/gzhu-sso-relay/internal/cryptox"
 	"github.com/thun888/gzhu-sso-relay/internal/session"
 	"github.com/thun888/gzhu-sso-relay/internal/store/model"
 	"github.com/thun888/gzhu-sso-relay/internal/store/repo"
+	"github.com/thun888/gzhu-sso-relay/internal/upstream"
 	"github.com/thun888/gzhu-sso-relay/internal/upstream/cas"
 	"github.com/thun888/gzhu-sso-relay/internal/upstream/portal"
 )
@@ -47,6 +49,7 @@ type Service struct {
 	qr           *QRStore
 	upstream     Upstream
 	emailDomains config.EmailDomains
+	audit        *audit.Recorder
 }
 
 type Options struct {
@@ -58,6 +61,7 @@ type Options struct {
 	QR           *QRStore
 	Upstream     Upstream
 	EmailDomains config.EmailDomains
+	Audit        *audit.Recorder
 }
 
 func NewService(opts Options) *Service {
@@ -70,19 +74,34 @@ func NewService(opts Options) *Service {
 		qr:           opts.QR,
 		upstream:     opts.Upstream,
 		emailDomains: opts.EmailDomains,
+		audit:        opts.Audit,
 	}
 }
 
 type Result struct {
-	User  *model.User
-	Token string
+	User      *model.User
+	Token     string
+	SessionID string
 }
 
 // Login 优先用本地哈希校验；本地不匹配时回访上游，覆盖上游改密与首次登录两种情况。
-func (s *Service) Login(ctx context.Context, id, password, userAgent string) (*Result, error) {
+func (s *Service) Login(ctx context.Context, id, password string, meta audit.Meta) (result *Result, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+		s.audit.Record(ctx, meta, model.AuthEvent{
+			Kind:   audit.KindLoginFailure,
+			UserID: id,
+			Result: audit.ResultFailure,
+			Reason: failureReason(err),
+		})
+	}()
+
+	userAgent := upstream.RequestUserAgentWithIP(meta.UserAgent, meta.IP)
 	user, err := s.users.ByID(ctx, id)
 	if errors.Is(err, repo.ErrNotFound) {
-		return s.provision(ctx, id, password, userAgent)
+		return s.provision(ctx, id, password, userAgent, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -90,9 +109,9 @@ func (s *Service) Login(ctx context.Context, id, password, userAgent string) (*R
 
 	if ok, verr := cryptox.VerifyPassword(user.PasswordHash, password); verr == nil && ok {
 		if user.UpstreamStale {
-			return s.reverifyUpstream(ctx, user, password, userAgent)
+			return s.reverifyUpstream(ctx, user, password, userAgent, meta)
 		}
-		result, err := s.issue(ctx, user)
+		result, err = s.issue(ctx, user, meta)
 		if err == nil && s.shouldRefresh() {
 			s.refreshUpstream(user.ID, password, userAgent)
 		}
@@ -117,35 +136,61 @@ func (s *Service) Login(ctx context.Context, id, password, userAgent string) (*R
 		return nil, err
 	}
 
-	return s.issue(ctx, user)
+	return s.issue(ctx, user, meta)
 }
 
-func (s *Service) Logout(ctx context.Context, token string) error {
+func (s *Service) Logout(ctx context.Context, token string, meta audit.Meta) error {
+	if token != "" {
+		if value, err := s.sessions.Resolve(ctx, token); err == nil {
+			s.audit.Record(ctx, meta, model.AuthEvent{
+				Kind:      audit.KindLogout,
+				UserID:    value.UserID,
+				SessionID: value.ID,
+				Result:    audit.ResultSuccess,
+			})
+		}
+	}
 	return s.sessions.Destroy(ctx, token)
 }
 
 // PasskeyLogin 通行密钥已在本站完成校验，用户身份确定后直接签发会话。
-func (s *Service) PasskeyLogin(ctx context.Context, userID string) (*Result, error) {
+func (s *Service) PasskeyLogin(ctx context.Context, userID string, meta audit.Meta) (result *Result, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+		s.audit.Record(ctx, meta, model.AuthEvent{
+			Kind:   audit.KindLoginFailure,
+			UserID: userID,
+			Result: audit.ResultFailure,
+			Reason: failureReason(err),
+		})
+	}()
+
 	user, err := s.users.ByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return s.issue(ctx, user)
+	return s.issue(ctx, user, meta)
 }
 
 func (s *Service) SessionTTL() time.Duration {
 	return s.sessions.TTL()
 }
 
-func (s *Service) Resolve(ctx context.Context, token string) (*model.User, error) {
-	id, err := s.sessions.Resolve(ctx, token)
+func (s *Service) ResolveSession(ctx context.Context, token string) (*session.Session, *model.User, error) {
+	value, err := s.sessions.Resolve(ctx, token)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return s.users.ByID(ctx, id)
+	user, err := s.users.ByID(ctx, value.UserID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return value, user, nil
 }
 
-func (s *Service) provision(ctx context.Context, id, password, userAgent string) (*Result, error) {
+func (s *Service) provision(ctx context.Context, id, password, userAgent string, meta audit.Meta) (*Result, error) {
 	profile, err := s.authenticateUpstream(ctx, id, password, userAgent)
 	if err != nil {
 		return nil, err
@@ -176,12 +221,12 @@ func (s *Service) provision(ctx context.Context, id, password, userAgent string)
 		return nil, err
 	}
 
-	return s.issue(ctx, user)
+	return s.issue(ctx, user, meta)
 }
 
 // reverifyUpstream 处理本地命中但上次上游验证被拒的登录：同步复核通过才放行，
 // 复核失败说明本地哈希已过期，保留标记等待下次复核。
-func (s *Service) reverifyUpstream(ctx context.Context, user *model.User, password, userAgent string) (*Result, error) {
+func (s *Service) reverifyUpstream(ctx context.Context, user *model.User, password, userAgent string, meta audit.Meta) (*Result, error) {
 	profile, err := s.authenticateUpstream(ctx, user.ID, password, userAgent)
 	if err != nil {
 		return nil, err
@@ -192,7 +237,7 @@ func (s *Service) reverifyUpstream(ctx context.Context, user *model.User, passwo
 	if err := s.saveUpstreamProfile(ctx, user.ID, profile); err != nil {
 		return nil, err
 	}
-	return s.issue(ctx, user)
+	return s.issue(ctx, user, meta)
 }
 
 // shouldRefresh 决定这次登录是否顺带刷新上游资料。本地哈希能命中就不会访问上游，
@@ -262,12 +307,17 @@ func upstreamGroups(profile portal.Profile) []repo.GroupSpec {
 	return specs
 }
 
-func (s *Service) issue(ctx context.Context, user *model.User) (*Result, error) {
+func (s *Service) issue(ctx context.Context, user *model.User, meta audit.Meta) (*Result, error) {
 	if user.Status == model.UserStatusDisabled {
 		return nil, ErrAccountDisabled
 	}
 
-	token, err := s.sessions.Create(ctx, user.ID)
+	token, sid, err := s.sessions.Create(ctx, session.Session{
+		UserID:    user.ID,
+		Method:    meta.Method,
+		IP:        meta.IP,
+		UserAgent: meta.UserAgent,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -279,8 +329,37 @@ func (s *Service) issue(ctx context.Context, user *model.User) (*Result, error) 
 	user.LastLoginAt = &now
 
 	_ = s.throttle.Reset(ctx, user.ID)
+	s.audit.Record(ctx, meta, model.AuthEvent{
+		Kind:      audit.KindLoginSuccess,
+		UserID:    user.ID,
+		SessionID: sid,
+		Result:    audit.ResultSuccess,
+	})
 
-	return &Result{User: user, Token: token}, nil
+	return &Result{User: user, Token: token, SessionID: sid}, nil
+}
+
+func failureReason(err error) string {
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		return "bad_credentials"
+	case errors.Is(err, ErrAccountDisabled):
+		return "account_disabled"
+	case errors.Is(err, ErrTooManyAttempts):
+		return "throttled"
+	case errors.Is(err, ErrUpstreamChallenge):
+		return "upstream_challenge"
+	case errors.Is(err, ErrUpstreamLocked):
+		return "upstream_locked"
+	case errors.Is(err, ErrUpstreamUnavailable):
+		return "upstream_unavailable"
+	case errors.Is(err, ErrNoEmailDomain):
+		return "no_email_domain"
+	case errors.Is(err, ErrQRUnlinked):
+		return "qr_unlinked"
+	default:
+		return "internal"
+	}
 }
 
 func (s *Service) authenticateUpstream(ctx context.Context, id, password, userAgent string) (portal.Profile, error) {
