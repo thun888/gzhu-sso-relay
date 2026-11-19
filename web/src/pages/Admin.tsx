@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Link2, LayoutGrid, Users, UsersRound } from "lucide-react"
+import { Link2, LayoutGrid, ScrollText, Users, UsersRound } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
@@ -7,12 +7,14 @@ import { BindingsPanel } from "./admin/BindingsPanel"
 import { ClientsPanel } from "./admin/ClientsPanel"
 import { GroupsPanel } from "./admin/GroupsPanel"
 import { UsersPanel } from "./admin/UsersPanel"
+import { AuditPanel } from "./admin/AuditPanel"
 
 const sections = [
   { key: "users", label: "用户", icon: Users },
   { key: "groups", label: "用户组", icon: UsersRound },
   { key: "clients", label: "应用", icon: LayoutGrid },
   { key: "bindings", label: "绑定源", icon: Link2 },
+  { key: "audit", label: "审计", icon: ScrollText },
 ] as const
 
 type Section = (typeof sections)[number]["key"]
@@ -92,6 +94,7 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
           {section === "groups" && <GroupsPanel onError={setError} />}
           {section === "clients" && <ClientsPanel onError={setError} />}
           {section === "bindings" && <BindingsPanel onError={setError} />}
+          {section === "audit" && <AuditPanel onError={setError} />}
         </main>
       </div>
     </div>

@@ -4,7 +4,15 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
-export function PageShell({ width = "max-w-[560px]", children }: { width?: string; children: ReactNode }) {
+export function PageShell({
+  width = "max-w-[560px]",
+  compact = false,
+  children,
+}: {
+  width?: string
+  compact?: boolean
+  children: ReactNode
+}) {
   return (
     <div
       className="relative min-h-screen w-full bg-cover bg-center bg-no-repeat"
@@ -12,7 +20,12 @@ export function PageShell({ width = "max-w-[560px]", children }: { width?: strin
     >
       <div className="pointer-events-none absolute inset-0 hidden bg-black/50 dark:block" />
       <ThemeToggle className="fixed top-4 right-4 z-20" />
-      <div className="relative flex min-h-screen items-center justify-center px-5 py-10">
+      <div
+        className={cn(
+          "relative flex min-h-screen items-center justify-center px-5",
+          compact ? "py-4" : "py-10",
+        )}
+      >
         <Card
           className={cn(
             "w-full gap-0 overflow-hidden border-border/70 bg-card/95 py-0 backdrop-blur-sm",
