@@ -1,6 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react"
-import { ChevronLeft, ChevronRight, Link2, Loader2, PenLine, ShieldCheck } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Link2,
+  Loader2,
+  LogOut,
+  PenLine,
+  Settings2,
+  ShieldCheck,
+  Users,
+} from "lucide-react"
 
 import { PageShell } from "@/components/page-shell"
 import { Button } from "@/components/ui/button"
@@ -92,6 +102,9 @@ const sectionViews = new Set<View>([
   "events",
   "delete",
 ])
+
+// 窄屏只留图标，文字由 aria-label 与 title 补足。w-10 正好容纳图标与默认的左内边距。
+const footerAction = "h-9 w-10 sm:w-auto"
 
 const scrollOptions = {
   scrollbars: {
@@ -970,10 +983,10 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
       <PageShell compact>
         <div className="flex h-[calc(100dvh_-_2rem)] max-h-[540px] flex-col overflow-hidden">
           <div key={view} className="account-view-enter flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 px-7 pt-6">{subHeader(meta.title, meta.description)}</div>
+            <div className="shrink-0 px-5 pt-6 sm:px-7">{subHeader(meta.title, meta.description)}</div>
             <div className="min-h-0 flex-1">
               <OverlayScrollbarsComponent className="h-full" options={scrollOptions}>
-                <div className="px-7 pb-6 pt-4">{renderSubPage()}</div>
+                <div className="px-5 pb-6 pt-4 sm:px-7">{renderSubPage()}</div>
               </OverlayScrollbarsComponent>
             </div>
           </div>
@@ -986,7 +999,7 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
     <PageShell compact>
       <div className="flex h-[calc(100dvh_-_2rem)] max-h-[540px] flex-col overflow-hidden">
         <div key={view} className="account-view-enter flex min-h-0 flex-1 flex-col">
-          <div className="shrink-0 px-7 pt-6">
+          <div className="shrink-0 px-5 pt-6 sm:px-7">
             {siteTitle && (
               <div className="flex items-center gap-2">
                 <span className="size-1.5 rounded-full bg-primary" />
@@ -1022,7 +1035,7 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
 
           <div className="min-h-0 flex-1">
             <OverlayScrollbarsComponent className="h-full" options={scrollOptions}>
-              <div className="space-y-4 px-7 pb-4 pt-4">
+              <div className="space-y-4 px-5 pb-4 pt-4 sm:px-7">
                 {notice && (
                   <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">
                     {notice}
@@ -1081,20 +1094,33 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
             </OverlayScrollbarsComponent>
           </div>
 
-          <div className="shrink-0 border-t border-border px-7 py-4">
+          <div className="shrink-0 border-t border-border px-5 py-4 sm:px-7">
             <div className="flex items-center justify-between gap-3">
-              <Button variant="outline" className="h-9" onClick={logout}>
-                退出登录
+              <Button
+                variant="outline"
+                className={footerAction}
+                aria-label="退出登录"
+                title="退出登录"
+                onClick={logout}
+              >
+                <LogOut className="size-4" strokeWidth={1.75} />
+                <span className="hidden sm:inline">退出登录</span>
               </Button>
               <div className="flex items-center gap-2">
                 {me.led_groups.length > 0 && (
-                  <Button variant="outline" className="h-9" asChild>
-                    <a href="/groups">我管理的用户组</a>
+                  <Button variant="outline" className={footerAction} asChild>
+                    <a href="/groups" aria-label="我管理的用户组" title="我管理的用户组">
+                      <Users className="size-4" strokeWidth={1.75} />
+                      <span className="hidden sm:inline">我管理的用户组</span>
+                    </a>
                   </Button>
                 )}
                 {me.type === 1 ? (
-                  <Button asChild className="h-9">
-                    <a href="/admin">管理后台</a>
+                  <Button className={footerAction} asChild>
+                    <a href="/admin" aria-label="管理后台" title="管理后台">
+                      <Settings2 className="size-4" strokeWidth={1.75} />
+                      <span className="hidden sm:inline">管理后台</span>
+                    </a>
                   </Button>
                 ) : (
                   me.led_groups.length === 0 && (
