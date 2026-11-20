@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link2, LayoutGrid, ScrollText, Users, UsersRound } from "lucide-react"
 
 import { ThemeToggle } from "@/components/theme-toggle"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { BindingsPanel } from "./admin/BindingsPanel"
 import { ClientsPanel } from "./admin/ClientsPanel"
@@ -39,8 +40,8 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
   const current = sections.find((item) => item.key === section) ?? sections[0]
 
   return (
-    <div className="flex min-h-screen bg-[#f5f6f8] dark:bg-background">
-      <aside className="sticky top-0 flex h-screen w-[208px] shrink-0 flex-col border-r border-border bg-card">
+    <div className="flex h-dvh overflow-hidden bg-[#f5f6f8] dark:bg-background">
+      <aside className="flex h-full w-[208px] shrink-0 flex-col border-r border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <span className="size-1.5 rounded-full bg-primary" />
           <span className="truncate text-[13px] font-medium text-foreground">
@@ -48,28 +49,32 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
           </span>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-          {sections.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => select(item.key)}
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors",
-                section === item.key
-                  ? "bg-primary/10 font-medium text-primary"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              )}
-            >
-              <item.icon className="size-4" strokeWidth={1.75} />
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        <div className="min-h-0 flex-1">
+          <ScrollArea className="h-full">
+            <nav className="space-y-0.5 p-3">
+              {sections.map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => select(item.key)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors",
+                    section === item.key
+                      ? "bg-primary/10 font-medium text-primary"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <item.icon className="size-4" strokeWidth={1.75} />
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </ScrollArea>
+        </div>
 
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
           <div className="flex items-center gap-2 text-[13px]">
             <span className="text-muted-foreground">管理后台</span>
             <span className="text-muted-foreground/40">/</span>
@@ -83,19 +88,21 @@ export default function Admin({ siteTitle }: { siteTitle: string }) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 p-6">
-          {error && (
-            <p className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2.5 text-[12.5px] text-destructive">
-              {error}
-            </p>
-          )}
+        <ScrollArea className="min-h-0 flex-1">
+          <main className="min-w-0 p-6">
+            {error && (
+              <p className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2.5 text-[12.5px] text-destructive">
+                {error}
+              </p>
+            )}
 
-          {section === "users" && <UsersPanel onError={setError} />}
-          {section === "groups" && <GroupsPanel onError={setError} />}
-          {section === "clients" && <ClientsPanel onError={setError} />}
-          {section === "bindings" && <BindingsPanel onError={setError} />}
-          {section === "audit" && <AuditPanel onError={setError} />}
-        </main>
+            {section === "users" && <UsersPanel onError={setError} />}
+            {section === "groups" && <GroupsPanel onError={setError} />}
+            {section === "clients" && <ClientsPanel onError={setError} />}
+            {section === "bindings" && <BindingsPanel onError={setError} />}
+            {section === "audit" && <AuditPanel onError={setError} />}
+          </main>
+        </ScrollArea>
       </div>
     </div>
   )

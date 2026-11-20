@@ -2,9 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Eye, EyeOff, Fingerprint, Loader2, Lock, RefreshCw, User } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 
-import { ThemeToggle } from "@/components/theme-toggle"
+import { PageShell } from "@/components/page-shell"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { safeNext, type CaptchaConfig, type LoginFooter, type LoginPanel } from "@/lib/config"
 import { createCaptcha, type CaptchaAnswer, type CaptchaInstance } from "@/lib/geetest"
@@ -458,249 +457,231 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
             : "正在生成二维码"
 
   return (
-    <div
-      className="relative min-h-screen w-full bg-cover bg-center bg-no-repeat"
-      style={{ backgroundImage: "url(/background.webp)" }}
+    <PageShell
+      width={showPanel ? "max-w-[800px]" : "max-w-[400px]"}
+      footer={showFooter ? footer.text : undefined}
     >
-      <div className="pointer-events-none absolute inset-0 hidden bg-black/50 dark:block" />
-      <ThemeToggle className="fixed top-4 right-4 z-20" />
-      <div className="relative flex min-h-screen items-center justify-center px-5 py-10">
-        <Card
-          className={cn(
-            "w-full gap-0 overflow-hidden border-border/70 bg-card/95 py-0 backdrop-blur-sm",
-            "shadow-[0_1px_2px_rgba(16,24,40,0.05),0_28px_72px_-28px_rgba(16,24,40,0.28)]",
-            showPanel ? "max-w-[800px]" : "max-w-[400px]",
+      <div className={cn(showPanel && "md:grid md:grid-cols-[minmax(0,1fr)_296px]")}>
+        <div className="px-7 py-9 sm:px-10">
+          {siteTitle && (
+            <div className="flex items-center gap-2">
+              <span className="size-1.5 rounded-full bg-primary" />
+              <span className="text-[12px] tracking-[0.12em] text-muted-foreground">
+                {siteTitle}
+              </span>
+            </div>
           )}
-        >
-          <div className={cn(showPanel && "md:grid md:grid-cols-[minmax(0,1fr)_296px]")}>
-            <div className="px-7 py-9 sm:px-10">
-              {siteTitle && (
-                <div className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-primary" />
-                  <span className="text-[12px] tracking-[0.12em] text-muted-foreground">
-                    {siteTitle}
-                  </span>
-                </div>
-              )}
 
-              <h1
-                className={cn(
-                  "text-[21px] font-medium tracking-tight text-foreground",
-                  siteTitle && "mt-6",
-                )}
+          <h1
+            className={cn(
+              "text-[21px] font-medium tracking-tight text-foreground",
+              siteTitle && "mt-6",
+            )}
+          >
+            统一身份认证
+          </h1>
+          <p className="mt-1.5 text-[13px] text-muted-foreground">
+            欢迎回来，请使用以下方式登录
+          </p>
+
+          {notice && (
+            <p className="mt-4 rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-[18px] text-foreground">
+              {notice}
+            </p>
+          )}
+
+          {tabs.length > 1 && (
+            <div
+              className={cn(
+                "mt-6 grid gap-1 rounded-lg border border-border/60 bg-muted p-1",
+                tabs.length === 3 ? "grid-cols-3" : "grid-cols-2",
+              )}
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => selectMode(tab.value)}
+                  onPointerEnter={() => {
+                    if (tab.value === "passkey") prefetchPasskey()
+                  }}
+                  onFocus={() => {
+                    if (tab.value === "passkey") prefetchPasskey()
+                  }}
+                  className={cn(
+                    "h-8 rounded-md text-[13px] transition-colors",
+                    mode === tab.value
+                      ? "bg-card text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mode === "passkey" ? (
+            <div className="mt-6 flex min-h-[200px] flex-col items-center justify-center">
+              <button
+                type="button"
+                disabled={passkeyBusy}
+                onClick={() => void passkeyLogin()}
+                aria-label="使用通行密钥登录"
+                className="flex size-[76px] items-center justify-center rounded-full border border-border bg-muted text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-70"
               >
-                统一身份认证
-              </h1>
-              <p className="mt-1.5 text-[13px] text-muted-foreground">
-                欢迎回来，请使用以下方式登录
+                {passkeyBusy ? (
+                  <Loader2 className="size-7 animate-spin" strokeWidth={1.5} />
+                ) : (
+                  <Fingerprint className="size-7" strokeWidth={1.5} />
+                )}
+              </button>
+              <p
+                className={cn(
+                  "mt-4 min-h-[18px] px-2 text-center text-[12.5px] leading-[18px]",
+                  passkeyError ? "text-destructive" : "text-muted-foreground",
+                )}
+                role="status"
+              >
+                {passkeyError ||
+                  (passkeyBusy
+                    ? "请在设备上完成验证"
+                    : "点击按系统提示使用指纹、面容或设备 PIN")}
+              </p>
+            </div>
+          ) : mode === "qr" ? (
+            <div className="mt-5">
+              <div className="relative mx-auto flex size-[200px] items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
+                {qrImage ? (
+                  <QRCodeSVG value={qrImage.url} size={176} level="M" />
+                ) : qrStatus === "loading" ? (
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                ) : null}
+                {qrStatus === "expired" && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/90">
+                    <span className="text-[13px] text-zinc-600">二维码已失效</span>
+                  </div>
+                )}
+              </div>
+
+              <p
+                className={cn(
+                  "mt-3 min-h-[18px] text-center text-[12.5px] leading-[18px]",
+                  qrStatus === "failed" ? "text-destructive" : "text-muted-foreground",
+                )}
+                role="status"
+              >
+                {qrHint}
               </p>
 
-              {notice && (
-                <p className="mt-4 rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-[18px] text-foreground">
-                  {notice}
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2 h-11 w-full"
+                disabled={qrStatus === "loading"}
+                onClick={() => setQrAttempt((value) => value + 1)}
+              >
+                <RefreshCw className="size-4" strokeWidth={1.75} />
+                刷新二维码
+              </Button>
+            </div>
+          ) : (
+            <form className="mt-7" onSubmit={handleSubmit}>
+              <div className="relative">
+                <User
+                  className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                <Input
+                  ref={usernameRef}
+                  className="h-11 pl-10"
+                  placeholder="请输入教工号或学号"
+                  aria-label="教工号或学号"
+                  aria-invalid={Boolean(usernameInvalid)}
+                  aria-describedby={usernameInvalid ? "username-error" : undefined}
+                  autoComplete="username"
+                  autoFocus
+                  required
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                />
+              </div>
+              {usernameInvalid && (
+                <p
+                  id="username-error"
+                  className="mt-1.5 text-[12.5px] leading-[18px] text-destructive"
+                >
+                  {usernameInvalid}
                 </p>
               )}
 
-              {tabs.length > 1 && (
-                <div
-                  className={cn(
-                    "mt-6 grid gap-1 rounded-lg border border-border/60 bg-muted p-1",
-                    tabs.length === 3 ? "grid-cols-3" : "grid-cols-2",
-                  )}
+              <div className="relative mt-3">
+                <Lock
+                  className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                <Input
+                  className="h-11 pr-11 pl-10"
+                  type={revealed ? "text" : "password"}
+                  placeholder="请输入密码"
+                  aria-label="密码"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={revealed ? "隐藏密码" : "显示密码"}
+                  onClick={() => setRevealed((value) => !value)}
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:bg-transparent"
                 >
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      onClick={() => selectMode(tab.value)}
-                      onPointerEnter={() => {
-                        if (tab.value === "passkey") prefetchPasskey()
-                      }}
-                      onFocus={() => {
-                        if (tab.value === "passkey") prefetchPasskey()
-                      }}
-                      className={cn(
-                        "h-8 rounded-md text-[13px] transition-colors",
-                        mode === tab.value
-                          ? "bg-card text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {mode === "passkey" ? (
-                <div className="mt-6 flex min-h-[200px] flex-col items-center justify-center">
-                  <button
-                    type="button"
-                    disabled={passkeyBusy}
-                    onClick={() => void passkeyLogin()}
-                    aria-label="使用通行密钥登录"
-                    className="flex size-[76px] items-center justify-center rounded-full border border-border bg-muted text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-70"
-                  >
-                    {passkeyBusy ? (
-                      <Loader2 className="size-7 animate-spin" strokeWidth={1.5} />
-                    ) : (
-                      <Fingerprint className="size-7" strokeWidth={1.5} />
-                    )}
-                  </button>
-                  <p
-                    className={cn(
-                      "mt-4 min-h-[18px] px-2 text-center text-[12.5px] leading-[18px]",
-                      passkeyError ? "text-destructive" : "text-muted-foreground",
-                    )}
-                    role="status"
-                  >
-                    {passkeyError ||
-                      (passkeyBusy
-                        ? "请在设备上完成验证"
-                        : "点击按系统提示使用指纹、面容或设备 PIN")}
-                  </p>
-                </div>
-              ) : mode === "qr" ? (
-                <div className="mt-5">
-                  <div className="relative mx-auto flex size-[200px] items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
-                    {qrImage ? (
-                      <QRCodeSVG value={qrImage.url} size={176} level="M" />
-                    ) : qrStatus === "loading" ? (
-                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                    ) : null}
-                    {qrStatus === "expired" && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/90">
-                        <span className="text-[13px] text-zinc-600">二维码已失效</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <p
-                    className={cn(
-                      "mt-3 min-h-[18px] text-center text-[12.5px] leading-[18px]",
-                      qrStatus === "failed" ? "text-destructive" : "text-muted-foreground",
-                    )}
-                    role="status"
-                  >
-                    {qrHint}
-                  </p>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="mt-2 h-11 w-full"
-                    disabled={qrStatus === "loading"}
-                    onClick={() => setQrAttempt((value) => value + 1)}
-                  >
-                    <RefreshCw className="size-4" strokeWidth={1.75} />
-                    刷新二维码
-                  </Button>
-                </div>
-              ) : (
-                <form className="mt-7" onSubmit={handleSubmit}>
-                  <div className="relative">
-                    <User
-                      className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
-                      strokeWidth={1.75}
-                    />
-                    <Input
-                      ref={usernameRef}
-                      className="h-11 pl-10"
-                      placeholder="请输入教工号或学号"
-                      aria-label="教工号或学号"
-                      aria-invalid={Boolean(usernameInvalid)}
-                      aria-describedby={usernameInvalid ? "username-error" : undefined}
-                      autoComplete="username"
-                      autoFocus
-                      required
-                      value={username}
-                      onChange={(event) => setUsername(event.target.value)}
-                    />
-                  </div>
-                  {usernameInvalid && (
-                    <p
-                      id="username-error"
-                      className="mt-1.5 text-[12.5px] leading-[18px] text-destructive"
-                    >
-                      {usernameInvalid}
-                    </p>
+                  {revealed ? (
+                    <EyeOff className="size-4" strokeWidth={1.75} />
+                  ) : (
+                    <Eye className="size-4" strokeWidth={1.75} />
                   )}
+                </Button>
+              </div>
 
-                  <div className="relative mt-3">
-                    <Lock
-                      className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
-                      strokeWidth={1.75}
-                    />
-                    <Input
-                      className="h-11 pr-11 pl-10"
-                      type={revealed ? "text" : "password"}
-                      placeholder="请输入密码"
-                      aria-label="密码"
-                      autoComplete="current-password"
-                      required
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={revealed ? "隐藏密码" : "显示密码"}
-                      onClick={() => setRevealed((value) => !value)}
-                      className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:bg-transparent"
-                    >
-                      {revealed ? (
-                        <EyeOff className="size-4" strokeWidth={1.75} />
-                      ) : (
-                        <Eye className="size-4" strokeWidth={1.75} />
-                      )}
-                    </Button>
-                  </div>
+              <p
+                className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
+                role="alert"
+              >
+                {error}
+              </p>
 
-                  <p
-                    className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
-                    role="alert"
-                  >
-                    {error}
-                  </p>
+              <Button type="submit" className="h-11 w-full" disabled={pending}>
+                {pending ? "登录中" : "登录"}
+              </Button>
 
-                  <Button type="submit" className="h-11 w-full" disabled={pending}>
-                    {pending ? "登录中" : "登录"}
-                  </Button>
+              <a
+                href={forgotPasswordUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3.5 block text-center text-[12.5px] text-muted-foreground transition-colors hover:text-primary"
+              >
+                忘记密码
+              </a>
+            </form>
+          )}
+        </div>
 
-                  <a
-                    href={forgotPasswordUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3.5 block text-center text-[12.5px] text-muted-foreground transition-colors hover:text-primary"
-                  >
-                    忘记密码
-                  </a>
-                </form>
-              )}
-            </div>
-
-            {showPanel && (
-              <aside className="hidden flex-col justify-center gap-3 border-l border-border bg-muted px-7 py-10 md:flex">
-                {panel.title && (
-                  <div className="text-[15px] font-medium text-foreground">{panel.title}</div>
-                )}
-                {panel.body && (
-                  <p className="text-[13px] leading-[1.9] whitespace-pre-line text-muted-foreground">
-                    {panel.body}
-                  </p>
-                )}
-              </aside>
+        {showPanel && (
+          <aside className="hidden flex-col justify-center gap-3 border-l border-border bg-muted px-7 py-10 md:flex">
+            {panel.title && (
+              <div className="text-[15px] font-medium text-foreground">{panel.title}</div>
             )}
-          </div>
-        </Card>
+            {panel.body && (
+              <p className="text-[13px] leading-[1.9] whitespace-pre-line text-muted-foreground">
+                {panel.body}
+              </p>
+            )}
+          </aside>
+        )}
       </div>
-
-      {showFooter && (
-        <p className="absolute inset-x-0 bottom-6 text-center text-[12px] leading-[1.8] whitespace-pre-line text-muted-foreground">
-          {footer.text}
-        </p>
-      )}
-    </div>
+    </PageShell>
   )
 }

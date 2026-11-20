@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react"
 import {
   ChevronLeft,
   ChevronRight,
@@ -16,6 +15,7 @@ import { PageShell } from "@/components/page-shell"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Modal } from "@/components/ui/modal"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { currentPath, safeNext } from "@/lib/config"
 import { eventNames, loginMethods, reasonNames } from "@/lib/auth-labels"
@@ -105,15 +105,6 @@ const sectionViews = new Set<View>([
 
 // 窄屏只留图标，文字由 aria-label 与 title 补足。w-10 正好容纳图标与默认的左内边距。
 const footerAction = "h-9 w-10 sm:w-auto"
-
-const scrollOptions = {
-  scrollbars: {
-    theme: "os-theme-relay",
-    autoHide: "never",
-    autoHideDelay: 700,
-    clickScroll: true,
-  },
-} as const
 
 function parseView(): View {
   const value = new URLSearchParams(window.location.search).get("section")
@@ -985,9 +976,9 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
           <div key={view} className="account-view-enter flex min-h-0 flex-1 flex-col">
             <div className="shrink-0 px-5 pt-6 sm:px-7">{subHeader(meta.title, meta.description)}</div>
             <div className="min-h-0 flex-1">
-              <OverlayScrollbarsComponent className="h-full" options={scrollOptions}>
+              <ScrollArea className="h-full">
                 <div className="px-5 pb-6 pt-4 sm:px-7">{renderSubPage()}</div>
-              </OverlayScrollbarsComponent>
+              </ScrollArea>
             </div>
           </div>
         </div>
@@ -1034,7 +1025,7 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
           </div>
 
           <div className="min-h-0 flex-1">
-            <OverlayScrollbarsComponent className="h-full" options={scrollOptions}>
+            <ScrollArea className="h-full">
               <div className="space-y-4 px-5 pb-4 pt-4 sm:px-7">
                 {notice && (
                   <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-foreground">
@@ -1091,7 +1082,7 @@ export default function Account({ siteTitle, passkey }: { siteTitle: string; pas
                   </div>
                 </div>
               </div>
-            </OverlayScrollbarsComponent>
+            </ScrollArea>
           </div>
 
           <div className="shrink-0 border-t border-border px-5 py-4 sm:px-7">

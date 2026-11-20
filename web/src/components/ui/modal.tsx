@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react"
 import { X } from "lucide-react"
 
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -78,7 +79,9 @@ export function Modal({ open, title, description, width, layer = 0, footer, onCl
           </button>
         </header>
 
-        <div className="max-h-[68vh] overflow-y-auto px-5 py-4">{children}</div>
+        <ScrollArea className="max-h-[68vh]">
+          <div className="px-5 py-4">{children}</div>
+        </ScrollArea>
 
         {footer && (
           <footer className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">

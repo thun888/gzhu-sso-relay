@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { eventNames, loginMethods, reasonNames } from "@/lib/auth-labels"
 import { Empty, Panel, Select, api, tdClass, thClass } from "./shared"
 
@@ -160,60 +161,62 @@ export function AuditPanel({ onError }: { onError: (message: string) => void }) 
         </Button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse">
-          <thead>
-            <tr>
-              <th className={thClass}>时间</th>
-              <th className={thClass}>事件</th>
-              <th className={thClass}>用户</th>
-              <th className={thClass}>应用</th>
-              <th className={thClass}>结果</th>
-              <th className={thClass}>来源</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((item) => (
-              <tr key={item.id}>
-                <td className={`${tdClass} whitespace-nowrap text-muted-foreground`}>
-                  {formatTime(item.occurred_at)}
-                </td>
-                <td className={tdClass}>{eventNames[item.kind] ?? item.kind}</td>
-                <td className={tdClass}>
-                  <div className="text-foreground">{item.user_id || "匿名"}</div>
-                  {item.actor_id && item.actor_id !== item.user_id && (
-                    <div className="text-[12px] text-muted-foreground">操作者 {item.actor_id}</div>
-                  )}
-                </td>
-                <td className={tdClass}>
-                  <div className="text-foreground">{item.client_name || item.client_id || "本站"}</div>
-                  {item.client_name && item.client_id && (
-                    <div className="text-[12px] text-muted-foreground">{item.client_id}</div>
-                  )}
-                </td>
-                <td
-                  className={`${tdClass} ${
-                    item.result === "success" ? "text-muted-foreground" : "text-destructive"
-                  }`}
-                >
-                  {resultLabel(item)}
-                </td>
-                <td className={`${tdClass} text-muted-foreground`}>
-                  <div className="whitespace-nowrap">
-                    {item.ip || "未知地址"}
-                    {item.method ? ` · ${loginMethods[item.method] ?? item.method}` : ""}
-                  </div>
-                  {item.user_agent && (
-                    <div className="max-w-[260px] truncate text-[12px]" title={item.user_agent}>
-                      {item.user_agent}
-                    </div>
-                  )}
-                </td>
+      <ScrollArea className="w-full">
+        <div className="pb-2">
+          <table className="w-full min-w-[900px] border-collapse">
+            <thead>
+              <tr>
+                <th className={thClass}>时间</th>
+                <th className={thClass}>事件</th>
+                <th className={thClass}>用户</th>
+                <th className={thClass}>应用</th>
+                <th className={thClass}>结果</th>
+                <th className={thClass}>来源</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {events.map((item) => (
+                <tr key={item.id}>
+                  <td className={`${tdClass} whitespace-nowrap text-muted-foreground`}>
+                    {formatTime(item.occurred_at)}
+                  </td>
+                  <td className={tdClass}>{eventNames[item.kind] ?? item.kind}</td>
+                  <td className={tdClass}>
+                    <div className="text-foreground">{item.user_id || "匿名"}</div>
+                    {item.actor_id && item.actor_id !== item.user_id && (
+                      <div className="text-[12px] text-muted-foreground">操作者 {item.actor_id}</div>
+                    )}
+                  </td>
+                  <td className={tdClass}>
+                    <div className="text-foreground">{item.client_name || item.client_id || "本站"}</div>
+                    {item.client_name && item.client_id && (
+                      <div className="text-[12px] text-muted-foreground">{item.client_id}</div>
+                    )}
+                  </td>
+                  <td
+                    className={`${tdClass} ${
+                      item.result === "success" ? "text-muted-foreground" : "text-destructive"
+                    }`}
+                  >
+                    {resultLabel(item)}
+                  </td>
+                  <td className={`${tdClass} text-muted-foreground`}>
+                    <div className="whitespace-nowrap">
+                      {item.ip || "未知地址"}
+                      {item.method ? ` · ${loginMethods[item.method] ?? item.method}` : ""}
+                    </div>
+                    {item.user_agent && (
+                      <div className="max-w-[260px] truncate text-[12px]" title={item.user_agent}>
+                        {item.user_agent}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ScrollArea>
 
       {!loading && events.length === 0 && <Empty>没有符合条件的记录</Empty>}
       {loading && <Empty>加载中</Empty>}

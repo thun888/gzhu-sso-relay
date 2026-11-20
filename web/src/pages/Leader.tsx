@@ -4,6 +4,7 @@ import { Search, UsersRound, X } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { Empty, Panel, api, thClass, tdClass } from "./admin/shared"
 
@@ -145,8 +146,8 @@ export default function Leader({ siteTitle }: { siteTitle: string }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#f5f6f8] dark:bg-background">
-      <aside className="sticky top-0 flex h-screen w-[208px] shrink-0 flex-col border-r border-border bg-card">
+    <div className="flex h-dvh overflow-hidden bg-[#f5f6f8] dark:bg-background">
+      <aside className="flex h-full w-[208px] shrink-0 flex-col border-r border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <span className="size-1.5 rounded-full bg-primary" />
           <span className="truncate text-[13px] font-medium text-foreground">
@@ -154,30 +155,34 @@ export default function Leader({ siteTitle }: { siteTitle: string }) {
           </span>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-          {groups.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => select(item.id)}
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition-colors",
-                selected === item.id
-                  ? "bg-primary/10 font-medium text-primary"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              )}
-            >
-              <UsersRound className="size-4 shrink-0" strokeWidth={1.75} />
-              <span className="min-w-0">
-                <span className="block truncate">{item.name}</span>
-                <span className="block truncate font-mono text-[11px] opacity-70">{item.code}</span>
-              </span>
-            </button>
-          ))}
-        </nav>
+        <div className="min-h-0 flex-1">
+          <ScrollArea className="h-full">
+            <nav className="space-y-0.5 p-3">
+              {groups.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => select(item.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] transition-colors",
+                    selected === item.id
+                      ? "bg-primary/10 font-medium text-primary"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <UsersRound className="size-4 shrink-0" strokeWidth={1.75} />
+                  <span className="min-w-0">
+                    <span className="block truncate">{item.name}</span>
+                    <span className="block truncate font-mono text-[11px] opacity-70">{item.code}</span>
+                  </span>
+                </button>
+              ))}
+            </nav>
+          </ScrollArea>
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
           <div className="flex items-center gap-2 text-[13px]">
             <span className="text-muted-foreground">组长工作台</span>
             <span className="text-muted-foreground/40">/</span>
@@ -191,127 +196,129 @@ export default function Leader({ siteTitle }: { siteTitle: string }) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 p-6">
-          {error && (
-            <p className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2.5 text-[12.5px] text-destructive">
-              {error}
-            </p>
-          )}
+        <ScrollArea className="min-h-0 flex-1">
+          <main className="min-w-0 p-6">
+            {error && (
+              <p className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2.5 text-[12.5px] text-destructive">
+                {error}
+              </p>
+            )}
 
-          {loading ? (
-            <Empty>加载中</Empty>
-          ) : groups.length === 0 ? (
-            <Empty>你不是任何用户组的组长</Empty>
-          ) : (
-            group && (
-              <Panel
-                title={group.name}
-                description={`${group.code} · 共 ${members.length} 人`}
-                action={
-                  <Button
-                    variant="outline"
-                    className="h-9 w-auto px-3.5"
-                    disabled={members.length === 0}
-                    onClick={exportMembers}
-                  >
-                    导出 CSV
-                  </Button>
-                }
-              >
-                <div className="space-y-3 p-6">
-                  <div className="relative">
-                    <Search
-                      className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
-                      strokeWidth={1.75}
-                    />
-                    <Input
-                      className="h-9 pl-9"
-                      placeholder="输入学号或姓名添加成员"
-                      value={keyword}
-                      onChange={(event) => setKeyword(event.target.value)}
-                    />
-                  </div>
-
-                  {candidates.length > 0 && (
-                    <div className="overflow-hidden rounded-md border border-border">
-                      {candidates.map((user) => (
-                        <button
-                          key={user.id}
-                          onClick={() => addMember(user)}
-                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-secondary"
-                        >
-                          <span className="min-w-0">
-                            <span className="text-[13px] text-foreground">{user.name}</span>
-                            <span className="ml-2 font-mono text-[12px] text-muted-foreground">
-                              {user.id}
-                            </span>
-                          </span>
-                          <span className="shrink-0 text-[12.5px] text-primary">添加</span>
-                        </button>
-                      ))}
+            {loading ? (
+              <Empty>加载中</Empty>
+            ) : groups.length === 0 ? (
+              <Empty>你不是任何用户组的组长</Empty>
+            ) : (
+              group && (
+                <Panel
+                  title={group.name}
+                  description={`${group.code} · 共 ${members.length} 人`}
+                  action={
+                    <Button
+                      variant="outline"
+                      className="h-9 w-auto px-3.5"
+                      disabled={members.length === 0}
+                      onClick={exportMembers}
+                    >
+                      导出 CSV
+                    </Button>
+                  }
+                >
+                  <div className="space-y-3 p-6">
+                    <div className="relative">
+                      <Search
+                        className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+                        strokeWidth={1.75}
+                      />
+                      <Input
+                        className="h-9 pl-9"
+                        placeholder="输入学号或姓名添加成员"
+                        value={keyword}
+                        onChange={(event) => setKeyword(event.target.value)}
+                      />
                     </div>
-                  )}
 
-                  {keyword.trim().length >= 2 && candidates.length === 0 && (
-                    <p className="text-[12px] text-muted-foreground">没有可添加的用户</p>
-                  )}
+                    {candidates.length > 0 && (
+                      <div className="overflow-hidden rounded-md border border-border">
+                        {candidates.map((user) => (
+                          <button
+                            key={user.id}
+                            onClick={() => addMember(user)}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                          >
+                            <span className="min-w-0">
+                              <span className="text-[13px] text-foreground">{user.name}</span>
+                              <span className="ml-2 font-mono text-[12px] text-muted-foreground">
+                                {user.id}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-[12.5px] text-primary">添加</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                  <div className="overflow-hidden rounded-md border border-border">
-                    <table className="w-full">
-                      <thead>
-                        <tr>
-                          <th className={thClass}>学号</th>
-                          <th className={thClass}>姓名</th>
-                          <th className={thClass}>邮箱</th>
-                          <th className={cn(thClass, "w-16 text-right")} />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {members.map((member) => {
-                          const isLeader = leaders.some((leader) => leader.id === member.id)
-                          return (
-                            <tr key={member.id}>
-                              <td className={cn(tdClass, "font-mono text-[12.5px]")}>{member.id}</td>
-                              <td className={tdClass}>
-                                {member.name}
-                                {isLeader && (
-                                  <span className="ml-2 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[11px] text-primary">
-                                    组长
-                                  </span>
-                                )}
-                                {member.status === 1 && (
-                                  <span className="ml-2 text-[11.5px] text-destructive">已禁用</span>
-                                )}
-                              </td>
-                              <td className={cn(tdClass, "text-muted-foreground")}>{member.email}</td>
-                              <td className={cn(tdClass, "text-right")}>
-                                {!isLeader && (
-                                  <button
-                                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                                    aria-label={`移除 ${member.name}`}
-                                    onClick={() => removeMember(member)}
-                                  >
-                                    <X className="size-3.5" strokeWidth={2} />
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                    {keyword.trim().length >= 2 && candidates.length === 0 && (
+                      <p className="text-[12px] text-muted-foreground">没有可添加的用户</p>
+                    )}
+
+                    <div className="overflow-hidden rounded-md border border-border">
+                      <table className="w-full">
+                        <thead>
+                          <tr>
+                            <th className={thClass}>学号</th>
+                            <th className={thClass}>姓名</th>
+                            <th className={thClass}>邮箱</th>
+                            <th className={cn(thClass, "w-16 text-right")} />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {members.map((member) => {
+                            const isLeader = leaders.some((leader) => leader.id === member.id)
+                            return (
+                              <tr key={member.id}>
+                                <td className={cn(tdClass, "font-mono text-[12.5px]")}>{member.id}</td>
+                                <td className={tdClass}>
+                                  {member.name}
+                                  {isLeader && (
+                                    <span className="ml-2 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[11px] text-primary">
+                                      组长
+                                    </span>
+                                  )}
+                                  {member.status === 1 && (
+                                    <span className="ml-2 text-[11.5px] text-destructive">已禁用</span>
+                                  )}
+                                </td>
+                                <td className={cn(tdClass, "text-muted-foreground")}>{member.email}</td>
+                                <td className={cn(tdClass, "text-right")}>
+                                  {!isLeader && (
+                                    <button
+                                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                                      aria-label={`移除 ${member.name}`}
+                                      onClick={() => removeMember(member)}
+                                    >
+                                      <X className="size-3.5" strokeWidth={2} />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {members.length === 0 && (
+                      <p className="py-6 text-center text-[12.5px] text-muted-foreground">
+                        该组还没有成员
+                      </p>
+                    )}
                   </div>
-
-                  {members.length === 0 && (
-                    <p className="py-6 text-center text-[12.5px] text-muted-foreground">
-                      该组还没有成员
-                    </p>
-                  )}
-                </div>
-              </Panel>
-            )
-          )}
-        </main>
+                </Panel>
+              )
+            )}
+          </main>
+        </ScrollArea>
       </div>
     </div>
   )
