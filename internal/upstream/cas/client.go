@@ -1,6 +1,7 @@
 package cas
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/thun888/gzhu-sso-relay/internal/upstream"
@@ -20,6 +23,7 @@ const (
 	DefaultBaseURL = "https://newcas.gzhu.edu.cn"
 	loginPath      = "/cas/login"
 	portalTitle    = "融合门户"
+	dumpDir        = "data/upstream"
 )
 
 var (
@@ -134,15 +138,52 @@ func (c *Client) issueToken(ctx context.Context) (lt, execution string, err erro
 		return "", "", fmt.Errorf("cas: 读取登录页: %w", err)
 	}
 
-	lt = firstMatch(ltPattern, string(body))
+	page := string(body)
+	lt = firstMatch(ltPattern, page)
 	if lt == "" {
-		return "", "", errors.New("cas: 登录页中未找到 lt")
+		return "", "", missingLTError(resp, body)
 	}
-	execution = firstMatch(executionPattern, string(body))
+	execution = firstMatch(executionPattern, page)
 	if execution == "" {
 		execution = "e1s1"
 	}
 	return lt, execution, nil
+}
+
+func missingLTError(resp *http.Response, body []byte) error {
+	id, err := saveResponse(resp, body)
+	if err != nil {
+		return fmt.Errorf("cas: 登录页中未找到 lt，保存原始响应失败: %w", err)
+	}
+	return fmt.Errorf("cas: 登录页中未找到 lt，原始响应已保存，溯源 ID 为 %s", id)
+}
+
+// saveResponse 原样落盘状态行、响应头与响应体，返回可用于定位文件的溯源 ID。
+func saveResponse(resp *http.Response, body []byte) (string, error) {
+	if err := os.MkdirAll(dumpDir, 0o700); err != nil {
+		return "", err
+	}
+	id := time.Now().Format("20060102-150405")
+	f, err := os.CreateTemp(dumpDir, "cas-login-"+id+"-*.http")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var head bytes.Buffer
+	fmt.Fprintf(&head, "%s %s\r\n", resp.Proto, resp.Status)
+	if err := resp.Header.Write(&head); err != nil {
+		return "", err
+	}
+	head.WriteString("\r\n")
+	if _, err := f.Write(head.Bytes()); err != nil {
+		return "", err
+	}
+	if _, err := f.Write(body); err != nil {
+		return "", err
+	}
+
+	return id, nil
 }
 
 func firstMatch(re *regexp.Regexp, s string) string {

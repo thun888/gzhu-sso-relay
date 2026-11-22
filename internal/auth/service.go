@@ -98,7 +98,7 @@ func (s *Service) Login(ctx context.Context, id, password string, meta audit.Met
 		})
 	}()
 
-	userAgent := upstream.RequestUserAgentWithIP(meta.UserAgent, meta.IP)
+	userAgent := upstream.LoginUserAgent(meta.UserAgent, meta.IP)
 	user, err := s.users.ByID(ctx, id)
 	if errors.Is(err, repo.ErrNotFound) {
 		return s.provision(ctx, id, password, userAgent, meta)

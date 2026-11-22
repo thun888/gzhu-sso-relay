@@ -566,7 +566,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
 
               <p
                 className={cn(
-                  "mt-3 min-h-[18px] text-center text-[12.5px] leading-[18px]",
+                  "mt-3 min-h-[18px] text-center text-[12.5px] leading-[18px] break-words",
                   qrStatus === "failed" ? "text-destructive" : "text-muted-foreground",
                 )}
                 role="status"
@@ -647,7 +647,7 @@ export default function Login({ siteTitle, panel, footer, captcha, qrLogin, pass
               </div>
 
               <p
-                className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive"
+                className="mt-2.5 mb-2.5 min-h-[18px] text-[12.5px] leading-[18px] text-destructive break-words"
                 role="alert"
               >
                 {error}

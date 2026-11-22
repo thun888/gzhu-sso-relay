@@ -16,7 +16,21 @@ func RequestUserAgent(raw string) string {
 
 // RequestUserAgentWithIP 在透传的 UA 后附加来访 IP，便于上游按来源识别请求。
 func RequestUserAgentWithIP(raw, ip string) string {
+	return withIP(RequestUserAgent(raw), ip)
+}
+
+// LoginUserAgent 用于账号密码登录：上游收到微信内置浏览器的 UA 会跳到微信单点，
+// 不渲染账密表单，因此这类来源改用桌面 UA。
+func LoginUserAgent(raw, ip string) string {
 	ua := RequestUserAgent(raw)
+	lower := strings.ToLower(ua)
+	if strings.Contains(lower, "micromessenger") || strings.Contains(lower, "wxwork") {
+		ua = DefaultUserAgent
+	}
+	return withIP(ua, ip)
+}
+
+func withIP(ua, ip string) string {
 	ip = strings.TrimSpace(ip)
 	if ip == "" || len(ip) > 64 || strings.ContainsFunc(ip, invalidHeaderRune) {
 		return ua

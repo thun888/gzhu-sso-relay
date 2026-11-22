@@ -290,6 +290,14 @@ func bearerToken(c *gin.Context) string {
 	return ""
 }
 
+func upstreamFailMessage(err error, hint string) string {
+	message := "上游认证服务不可用"
+	if detail, ok := strings.CutPrefix(err.Error(), auth.ErrUpstreamUnavailable.Error()+": "); ok && detail != "" {
+		message += "（" + detail + "）"
+	}
+	return message + hint
+}
+
 func authError(err error) (int, string) {
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
@@ -303,7 +311,7 @@ func authError(err error) (int, string) {
 	case errors.Is(err, auth.ErrUpstreamChallenge):
 		return http.StatusBadGateway, "上游要求验证码，无法自动登录，请联系管理员"
 	case errors.Is(err, auth.ErrUpstreamUnavailable):
-		return http.StatusBadGateway, "上游认证服务不可用"
+		return http.StatusBadGateway, upstreamFailMessage(err, "")
 	case errors.Is(err, auth.ErrNoEmailDomain):
 		return http.StatusInternalServerError, "该学号没有匹配的邮箱域名配置"
 	default:
@@ -324,7 +332,7 @@ func qrError(err error) (int, string) {
 	case errors.Is(err, auth.ErrNoEmailDomain):
 		return http.StatusInternalServerError, "该账号没有匹配的邮箱域名配置"
 	case errors.Is(err, auth.ErrUpstreamUnavailable):
-		return http.StatusBadGateway, "上游认证服务不可用，请改用账号密码登录"
+		return http.StatusBadGateway, upstreamFailMessage(err, "，请改用账号密码登录")
 	default:
 		return http.StatusInternalServerError, "扫码登录失败，请稍后重试"
 	}
